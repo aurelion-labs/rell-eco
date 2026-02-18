@@ -1,322 +1,311 @@
 """
-llm_integration.py - Guide and utilities for integrating with LLMs
+llm_integration.py - Modular LLM Provider System for Rell Audit Engine
 
-This file shows you how to hook up real LLM calls to make Rell truly autonomous.
+Rell supports three LLM modes. Switch between them at runtime via --llm flag
+or programmatically by passing provider= to RellLLMProvider.
 
-Choose one:
-1. OpenAI (GPT-4, GPT-3.5)
-2. Azure OpenAI
-3. Anthropic Claude
-4. Local models (Ollama with Llama 3, Mistral, etc.)
+PROVIDERS:
+    none     Fully deterministic. No external calls. Default. (recommended for regulated data)
+    openai   Cloud. Requires OPENAI_API_KEY. Fast, high quality.
+    claude   Cloud. Requires ANTHROPIC_API_KEY. Strong reasoning.
+    ollama   Local. Requires Ollama running on localhost. Zero external calls. Free.
 
-START HERE: Uncomment the section for your chosen provider.
-"""
+USAGE (CLI):
+    python run_audit.py                         # deterministic, no LLM
+    python run_audit.py --llm openai            # OpenAI GPT-4o
+    python run_audit.py --llm openai --model gpt-4o-mini
+    python run_audit.py --llm claude            # Claude Sonnet
+    python run_audit.py --llm ollama            # local Ollama (default model: llama3)
+    python run_audit.py --llm ollama --model mistral
 
-# ============================================================================
-# OPTION 1: OpenAI (GPT-4)
-# ============================================================================
+USAGE (Python):
+    from llm_integration import RellLLMProvider, build_provider
 
-"""
-Install: pip install openai
+    # Deterministic (no LLM)
+    provider = RellLLMProvider()
+    text = provider.assess(prompt)
 
-Usage:
-    from llm_integration import RellResponder
-    responder = RellResponder(provider="openai", api_key="sk-...")
-    response = responder.get_rell_response(user_message, world_state, memories)
-"""
+    # OpenAI
+    provider = RellLLMProvider(provider="openai")
+    text = provider.assess(prompt)
 
-def openai_example():
-    from openai import OpenAI
-    
-    client = OpenAI(api_key="your-api-key-here")
-    
-    def get_rell_response(system_prompt: str, context: str, user_message: str) -> str:
-        response = client.chat.completions.create(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "system", "content": context},
-                {"role": "user", "content": user_message}
-            ],
-            temperature=0.8,  # Creative, but not random
-            max_tokens=500
-        )
-        return response.choices[0].message.content
-    
-    return get_rell_response
+    # Ollama (local, zero external calls)
+    provider = RellLLMProvider(provider="ollama", model="mistral")
+    text = provider.assess(prompt)
 
+    # Switch provider at runtime without reinstantiating
+    provider.switch("ollama")
+    text = provider.assess(prompt)
 
-# ============================================================================
-# OPTION 2: Anthropic Claude
-# ============================================================================
+    # Build from CLI args or environment variables
+    provider = build_provider(provider="ollama")
 
-"""
-Install: pip install anthropic
+SECURITY NOTE:
+    When --llm openai or --llm claude is active, Rell sends audit finding
+    summaries to external APIs. For regulated data (HIPAA, GDPR, etc.) use
+    --llm ollama (fully local) or omit --llm entirely (deterministic mode).
+    See DEPLOYMENT_SECURITY.md for full guidance.
 
-Usage:
-    from llm_integration import RellResponder
-    responder = RellResponder(provider="claude", api_key="sk-ant-...")
-    response = responder.get_rell_response(user_message, world_state, memories)
-"""
+OLLAMA SETUP:
+    1. Install Ollama: https://ollama.com
+    2. Pull a model: ollama pull llama3
+    3. Ollama runs automatically on localhost:11434
+    4. Run Rell: python run_audit.py --llm ollama
+    Supported models: llama3, mistral, neural-chat, phi3, gemma2, codellama
+    Switch model:     python run_audit.py --llm ollama --model mistral
 
-def claude_example():
-    from anthropic import Anthropic
-    
-    client = Anthropic(api_key="your-api-key-here")
-    
-    def get_rell_response(system_prompt: str, context: str, user_message: str) -> str:
-        response = client.messages.create(
-            model="claude-3-5-sonnet-20241022",
-            max_tokens=500,
-            system=f"{system_prompt}\n\n{context}",
-            messages=[
-                {"role": "user", "content": user_message}
-            ]
-        )
-        return response.content[0].text
-    
-    return get_rell_response
-
-
-# ============================================================================
-# OPTION 3: Local Model with Ollama
-# ============================================================================
-
-"""
-Install Ollama: https://ollama.ai
-Pull model: ollama pull llama2 (or mistral, neural-chat, etc.)
-Start server: ollama serve
-
-Usage:
-    from llm_integration import RellResponder
-    responder = RellResponder(provider="ollama", model="llama2")
-    response = responder.get_rell_response(user_message, world_state, memories)
-"""
-
-def ollama_example():
-    import requests
-    import json
-    
-    ollama_url = "http://localhost:11434/api/generate"
-    
-    def get_rell_response(system_prompt: str, context: str, user_message: str) -> str:
-        full_prompt = f"{system_prompt}\n\n{context}\n\nUser: {user_message}\n\nRell:"
-        
-        response = requests.post(ollama_url, json={
-            "model": "llama2",
-            "prompt": full_prompt,
-            "stream": False,
-            "temperature": 0.8
-        })
-        
-        result = response.json()
-        return result.get("response", "").strip()
-    
-    return get_rell_response
-
-
-# ============================================================================
-# OPTION 4: LangChain Integration (Multi-Provider)
-# ============================================================================
-
-"""
-Install: pip install langchain langchain-openai langchain-anthropic
-
-This is the most flexible. LangChain abstracts away provider differences.
-"""
-
-def langchain_example():
-    """Show how to use LangChain for flexible LLM integration."""
-    
-    from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
-    
-    # For OpenAI:
-    from langchain_openai import ChatOpenAI
-    llm = ChatOpenAI(model="gpt-4", temperature=0.8)
-    
-    # For Claude:
-    # from langchain_anthropic import ChatAnthropic
-    # llm = ChatAnthropic(model="claude-3-sonnet-20240229", temperature=0.8)
-    
-    # For Ollama:
-    # from langchain_community.llms import Ollama
-    # llm = Ollama(model="llama2")
-    
-    from langchain_core.messages import SystemMessage, HumanMessage
-    
-    def get_rell_response(system_prompt: str, context: str, user_message: str) -> str:
-        messages = [
-            SystemMessage(content=system_prompt),
-            SystemMessage(content=context),
-            HumanMessage(content=user_message)
-        ]
-        
-        response = llm.invoke(messages)
-        return response.content
-    
-    return get_rell_response
-
-
-# ============================================================================
-# INTEGRATION WITH talk_to_rell.py
-# ============================================================================
-
-"""
-To use this in talk_to_rell.py, replace the _generate_rell_response method:
-
-OLD:
-    def _generate_rell_response(self, user_message: str, 
-                               system_prompt: str, context: str) -> str:
-        # Placeholder responses...
-
-NEW:
-    def _generate_rell_response(self, user_message: str, 
-                               system_prompt: str, context: str) -> str:
-        responder = RellResponder(provider="openai", api_key=os.getenv("OPENAI_API_KEY"))
-        return responder.get_rell_response(system_prompt, context, user_message)
-
-Then set your API key:
-    export OPENAI_API_KEY="sk-..."  (Linux/Mac)
-    set OPENAI_API_KEY=sk-...       (Windows)
-"""
-
-
-# ============================================================================
-# UNIFIED RESPONDER CLASS
-# ============================================================================
-
-class RellResponder:
-    """Unified interface for any LLM provider."""
-    
-    def __init__(self, provider: str = "openai", **kwargs):
-        self.provider = provider
-        
-        if provider == "openai":
-            self.client = self._init_openai(kwargs)
-        elif provider == "claude":
-            self.client = self._init_claude(kwargs)
-        elif provider == "ollama":
-            self.client = self._init_ollama(kwargs)
-        else:
-            raise ValueError(f"Unknown provider: {provider}")
-    
-    def _init_openai(self, kwargs):
-        from openai import OpenAI
-        return OpenAI(api_key=kwargs.get("api_key"))
-    
-    def _init_claude(self, kwargs):
-        from anthropic import Anthropic
-        return Anthropic(api_key=kwargs.get("api_key"))
-    
-    def _init_ollama(self, kwargs):
-        return {"model": kwargs.get("model", "llama2")}
-    
-    def get_rell_response(self, system_prompt: str, context: str, user_message: str) -> str:
-        """Get Rell's response using the configured LLM."""
-        
-        if self.provider == "openai":
-            return self._openai_response(system_prompt, context, user_message)
-        elif self.provider == "claude":
-            return self._claude_response(system_prompt, context, user_message)
-        elif self.provider == "ollama":
-            return self._ollama_response(system_prompt, context, user_message)
-    
-    def _openai_response(self, system_prompt: str, context: str, user_message: str) -> str:
-        response = self.client.chat.completions.create(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "system", "content": context},
-                {"role": "user", "content": user_message}
-            ],
-            temperature=0.8,
-            max_tokens=500
-        )
-        return response.choices[0].message.content
-    
-    def _claude_response(self, system_prompt: str, context: str, user_message: str) -> str:
-        response = self.client.messages.create(
-            model="claude-3-sonnet-20240229",
-            max_tokens=500,
-            system=f"{system_prompt}\n\n{context}",
-            messages=[
-                {"role": "user", "content": user_message}
-            ]
-        )
-        return response.content[0].text
-    
-    def _ollama_response(self, system_prompt: str, context: str, user_message: str) -> str:
-        import requests
-        
-        full_prompt = f"{system_prompt}\n\n{context}\n\nUser: {user_message}\n\nRell:"
-        
-        response = requests.post("http://localhost:11434/api/generate", json={
-            "model": self.client["model"],
-            "prompt": full_prompt,
-            "stream": False,
-            "temperature": 0.8
-        })
-        
-        return response.json().get("response", "").strip()
-
-
-# ============================================================================
-# ENVIRONMENT SETUP
-# ============================================================================
-
-"""
-1. Create a .env file in stonecrest_world_engine/:
-
-    # For OpenAI
+ENVIRONMENT VARIABLES (set in .env):
+    RELL_LLM_PROVIDER=ollama          # default provider when --llm not specified
+    RELL_LLM_MODEL=mistral            # override default model
     OPENAI_API_KEY=sk-...
-    
-    # For Claude
     ANTHROPIC_API_KEY=sk-ant-...
-    
-    # For Ollama (usually no key needed)
-    OLLAMA_MODEL=llama2
-
-2. Load it in your code:
-
-    from dotenv import load_dotenv
-    import os
-    
-    load_dotenv()
-    api_key = os.getenv("OPENAI_API_KEY")
+    OLLAMA_BASE_URL=http://localhost:11434   # override if Ollama runs on different host
 """
 
+import os
+from typing import Optional
+from dotenv import load_dotenv
 
-if __name__ == "__main__":
-    print("""
-    ╔════════════════════════════════════════════════════════════════╗
-    ║  Stonecrest World Engine - LLM Integration Guide              ║
-    ╚════════════════════════════════════════════════════════════════╝
-    
-    QUICK START:
-    
-    1. Choose your LLM provider (OpenAI, Claude, Ollama, etc.)
-    2. Install the SDK (pip install openai, anthropic, etc.)
-    3. Set your API key (environment variable or .env file)
-    4. Update talk_to_rell.py to use RellResponder
-    5. Run: python talk_to_rell.py .
-    
-    ────────────────────────────────────────────────────────────────
-    
-    RECOMMENDED STARTING SETUP:
-    
-    Provider: OpenAI GPT-4
-    Install: pip install openai
-    Cost: ~$0.03 per conversation
-    Quality: Excellent for character roleplay
-    
-    OR
-    
-    Provider: Ollama (Local, Free)
-    Install: https://ollama.ai, then ollama pull llama2
-    Cost: Free (your CPU/GPU)
-    Quality: Good, very fast locally
-    
-    ────────────────────────────────────────────────────────────────
-    
-    For more details, read the comments in llm_integration.py
-    """)
+load_dotenv()
+
+# ---------------------------------------------------------------------------
+# Default models per provider
+# ---------------------------------------------------------------------------
+_DEFAULT_MODELS = {
+    "openai": "gpt-4o",
+    "claude": "claude-3-5-sonnet-20241022",
+    "ollama": "llama3",
+}
+
+_OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+
+_AUDIT_SYSTEM_PROMPT = """You are Rell — an autonomous audit agent. Scholarly, precise, direct.
+You analyze workflow and data integrity findings and produce clear, structured assessments.
+You do not embellish. You name what you find. You state severity plainly.
+You never fabricate findings. If something is unclear, you say so.
+Your output is used by compliance officers and data analysts — be accurate above all else."""
+
+
+# ---------------------------------------------------------------------------
+# RellLLMProvider — unified modular interface
+# ---------------------------------------------------------------------------
+
+class RellLLMProvider:
+    """
+    Unified LLM provider for Rell's audit assessment engine.
+
+    All providers expose the same interface: assess(prompt) -> str
+    Switch between providers at runtime with .switch(provider).
+
+    Providers:
+        none    — deterministic, no external calls (default, safe for regulated data)
+        openai  — OpenAI GPT-4o (or any OpenAI-compatible model)
+        claude  — Anthropic Claude
+        ollama  — Local model via Ollama (zero external calls, free)
+    """
+
+    def __init__(
+        self,
+        provider: str = "none",
+        model: Optional[str] = None,
+        api_key: Optional[str] = None,
+        base_url: Optional[str] = None,
+    ):
+        self.provider = provider.lower()
+        self.model = model or _DEFAULT_MODELS.get(self.provider)
+        self.api_key = api_key
+        self.base_url = base_url
+        self._client = None
+
+        if self.provider != "none":
+            self._init_client()
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def assess(self, prompt: str) -> str:
+        """
+        Generate an audit assessment for the given prompt.
+        Falls back to deterministic mode on any provider error.
+        """
+        if self.provider == "none":
+            return self._deterministic_response(prompt)
+        elif self.provider == "openai":
+            return self._openai_assess(prompt)
+        elif self.provider == "claude":
+            return self._claude_assess(prompt)
+        elif self.provider == "ollama":
+            return self._ollama_assess(prompt)
+        return self._deterministic_response(prompt)
+
+    def switch(self, provider: str, model: Optional[str] = None) -> None:
+        """
+        Switch to a different LLM provider at runtime.
+
+        Example:
+            provider = RellLLMProvider(provider="openai")
+            provider.switch("ollama")   # now fully local, no external calls
+            provider.switch("none")     # back to deterministic
+        """
+        self.provider = provider.lower()
+        self.model = model or _DEFAULT_MODELS.get(self.provider)
+        self._client = None
+        if self.provider != "none":
+            self._init_client()
+
+    def is_local(self) -> bool:
+        """Returns True if no external API calls will be made."""
+        return self.provider in ("none", "ollama")
+
+    def describe(self) -> str:
+        """Human-readable description of the active provider."""
+        if self.provider == "none":
+            return "deterministic (no LLM — fully local, no external calls)"
+        if self.provider == "ollama":
+            return f"ollama/{self.model} (local — no external calls)"
+        return f"{self.provider}/{self.model} (cloud — finding summaries sent externally)"
+
+    # ------------------------------------------------------------------
+    # Client initialization
+    # ------------------------------------------------------------------
+
+    def _init_client(self) -> None:
+        if self.provider == "openai":
+            try:
+                from openai import OpenAI
+                key = self.api_key or os.getenv("OPENAI_API_KEY")
+                if not key:
+                    raise ValueError(
+                        "OPENAI_API_KEY not set. Add it to .env or set env var."
+                    )
+                self._client = OpenAI(api_key=key)
+            except ImportError:
+                raise ImportError("Run: pip install openai")
+
+        elif self.provider == "claude":
+            try:
+                from anthropic import Anthropic
+                key = self.api_key or os.getenv("ANTHROPIC_API_KEY")
+                if not key:
+                    raise ValueError(
+                        "ANTHROPIC_API_KEY not set. Add it to .env or set env var."
+                    )
+                self._client = Anthropic(api_key=key)
+            except ImportError:
+                raise ImportError("Run: pip install anthropic")
+
+        elif self.provider == "ollama":
+            try:
+                import requests
+                resp = requests.get(f"{_OLLAMA_BASE_URL}/api/tags", timeout=3)
+                if resp.status_code != 200:
+                    raise ConnectionError(f"Ollama returned status {resp.status_code}")
+                self._client = {"base_url": _OLLAMA_BASE_URL, "model": self.model}
+            except Exception as e:
+                raise ConnectionError(
+                    f"Cannot reach Ollama at {_OLLAMA_BASE_URL}.\n"
+                    f"  Install: https://ollama.com\n"
+                    f"  Pull model: ollama pull {self.model}\n"
+                    f"  Error: {e}"
+                )
+
+    # ------------------------------------------------------------------
+    # Provider implementations
+    # ------------------------------------------------------------------
+
+    def _openai_assess(self, prompt: str) -> str:
+        try:
+            response = self._client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": _AUDIT_SYSTEM_PROMPT},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.3,
+                max_tokens=600,
+            )
+            return response.choices[0].message.content.strip()
+        except Exception as e:
+            return f"[OpenAI error — falling back to deterministic]\n{e}\n\n{self._deterministic_response(prompt)}"
+
+    def _claude_assess(self, prompt: str) -> str:
+        try:
+            response = self._client.messages.create(
+                model=self.model,
+                max_tokens=600,
+                system=_AUDIT_SYSTEM_PROMPT,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            return response.content[0].text.strip()
+        except Exception as e:
+            return f"[Claude error — falling back to deterministic]\n{e}\n\n{self._deterministic_response(prompt)}"
+
+    def _ollama_assess(self, prompt: str) -> str:
+        try:
+            import requests as req
+            full_prompt = f"{_AUDIT_SYSTEM_PROMPT}\n\n{prompt}"
+            response = req.post(
+                f"{self._client['base_url']}/api/generate",
+                json={
+                    "model": self._client["model"],
+                    "prompt": full_prompt,
+                    "stream": False,
+                    "options": {"temperature": 0.3},
+                },
+                timeout=120,
+            )
+            return response.json().get("response", "").strip()
+        except Exception as e:
+            return f"[Ollama error — falling back to deterministic]\n{e}\n\n{self._deterministic_response(prompt)}"
+
+    def _deterministic_response(self, prompt: str) -> str:
+        lines = [l.strip() for l in prompt.strip().splitlines() if l.strip()]
+        summary_line = lines[0] if lines else "Audit cycle complete."
+        return (
+            f"{summary_line}\n\n"
+            "Assessment generated in deterministic mode — no LLM, no external calls. "
+            "All findings are rule-based. "
+            "Use --llm ollama for locally-enhanced assessments (free, fully local) or "
+            "--llm openai for cloud-enhanced assessments."
+        )
+
+
+# ---------------------------------------------------------------------------
+# Convenience factory — builds from CLI args or environment
+# ---------------------------------------------------------------------------
+
+def build_provider(
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
+    api_key: Optional[str] = None,
+) -> RellLLMProvider:
+    """
+    Build a RellLLMProvider from CLI args or environment variables.
+
+    Priority for provider:  explicit arg > RELL_LLM_PROVIDER env var > "none"
+    Priority for model:     explicit arg > RELL_LLM_MODEL env var > provider default
+
+    .env example:
+        RELL_LLM_PROVIDER=ollama
+        RELL_LLM_MODEL=mistral
+    """
+    resolved_provider = provider or os.getenv("RELL_LLM_PROVIDER", "none")
+    resolved_model    = model    or os.getenv("RELL_LLM_MODEL")
+    return RellLLMProvider(
+        provider=resolved_provider,
+        model=resolved_model,
+        api_key=api_key,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Legacy alias — keeps backward compatibility with any existing references
+# ---------------------------------------------------------------------------
+
+class RellResponder(RellLLMProvider):
+    """Legacy alias for RellLLMProvider. Use RellLLMProvider in new code."""
+    def get_rell_response(self, system_prompt: str, context: str, user_message: str) -> str:
+        prompt = f"{system_prompt}\n\nContext:\n{context}\n\nUser:\n{user_message}"
+        return self.assess(prompt)
+
