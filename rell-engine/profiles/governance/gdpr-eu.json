@@ -1,0 +1,107 @@
+{
+  "profile_id": "gdpr-eu",
+  "version": "0.1.0",
+  "standard": "General Data Protection Regulation (EU) 2016/679",
+  "jurisdiction": "European Union",
+  "effective_date": "2018-05-25",
+  "last_reviewed": "2026-02-18",
+  "notes": "Top 10 GDPR obligations as auditable data checks. v0.1.0 - proof of concept. Not legal advice.",
+  "obligations": [
+    {
+      "id": "gdpr-001",
+      "article": "Art. 5(1)(a)",
+      "title": "Lawfulness - Consent Field Present",
+      "description": "Personal data must be processed lawfully. Consent basis must be recorded.",
+      "check_type": "field_present",
+      "severity": "CRITICAL",
+      "required_fields": ["consent_flag", "consent_basis"],
+      "recommended_fields": ["consent_timestamp", "consent_version"]
+    },
+    {
+      "id": "gdpr-002",
+      "article": "Art. 5(1)(b)",
+      "title": "Purpose Limitation",
+      "description": "Data collected for specified purposes must not be processed for incompatible purposes.",
+      "check_type": "field_present",
+      "severity": "HIGH",
+      "required_fields": ["data_purpose", "processing_basis"],
+      "recommended_fields": ["purpose_description"]
+    },
+    {
+      "id": "gdpr-003",
+      "article": "Art. 5(1)(c)",
+      "title": "Data Minimisation",
+      "description": "Only data adequate and relevant to the purpose should be collected.",
+      "check_type": "manual_review_flag",
+      "severity": "MEDIUM",
+      "notes": "Automated check flags records with unusually high field density vs. declared purpose."
+    },
+    {
+      "id": "gdpr-004",
+      "article": "Art. 5(1)(d)",
+      "title": "Accuracy - Required Fields Not Null",
+      "description": "Personal data must be accurate and kept up to date.",
+      "check_type": "null_check",
+      "severity": "HIGH",
+      "required_fields": ["data_subject_id", "last_verified_date"]
+    },
+    {
+      "id": "gdpr-005",
+      "article": "Art. 5(1)(e)",
+      "title": "Storage Limitation - Retention Timestamp Present",
+      "description": "Data must not be kept longer than necessary.",
+      "check_type": "field_present",
+      "severity": "HIGH",
+      "required_fields": ["retention_expiry_date", "data_category"],
+      "recommended_fields": ["retention_policy_id"]
+    },
+    {
+      "id": "gdpr-006",
+      "article": "Art. 13/14",
+      "title": "Transparency - Privacy Notice Reference",
+      "description": "Data subjects must be informed about data processing at collection time.",
+      "check_type": "field_present",
+      "severity": "HIGH",
+      "required_fields": ["privacy_notice_version", "notice_presented_date"]
+    },
+    {
+      "id": "gdpr-007",
+      "article": "Art. 17",
+      "title": "Right to Erasure - Deletion Flag Present",
+      "description": "Mechanism must exist to honor erasure requests.",
+      "check_type": "field_present",
+      "severity": "CRITICAL",
+      "required_fields": ["erasure_requested", "erasure_date"],
+      "recommended_fields": ["erasure_request_id", "erasure_confirmed_by"]
+    },
+    {
+      "id": "gdpr-008",
+      "article": "Art. 20",
+      "title": "Data Portability - Export Mechanism",
+      "description": "Data subjects have the right to receive their data in a structured, machine-readable format.",
+      "check_type": "manual_review_flag",
+      "severity": "MEDIUM",
+      "notes": "Flags datasets with no documented export pathway."
+    },
+    {
+      "id": "gdpr-009",
+      "article": "Art. 25",
+      "title": "Data Protection by Design - Pseudonymisation Field",
+      "description": "Data protection must be built into processing systems by design.",
+      "check_type": "field_present",
+      "severity": "HIGH",
+      "recommended_fields": ["pseudonymised", "pii_masked", "data_classification"]
+    },
+    {
+      "id": "gdpr-010",
+      "article": "Art. 33",
+      "title": "Breach Notification - Incident Log Present",
+      "description": "Breaches affecting personal data must be reported to supervisory authority within 72 hours.",
+      "check_type": "field_present",
+      "severity": "CRITICAL",
+      "required_fields": ["incident_id", "incident_detected_at", "authority_notified_at"],
+      "threshold_hours": 72,
+      "notes": "Rell flags any incident record where the gap between detected_at and notified_at exceeds 72 hours."
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+# Environment
+.env
+
+# Credentials — never commit
+data/audit/credentials.json
+
+# Audit outputs — generated, not source
+data/audit/memory/reports/
+data/audit/memory/finding_logs/
+data/audit/memory/cycle_logs/
+data/audit/schema/schema_current.json
+data/audit/schema/connection_audit_log.jsonl
+
+# Keep intake folders tracked but ignore dropped files
+data/audit/intake/txt/*.txt
+data/audit/intake/excel/*.xlsx
+data/audit/intake/excel/*.csv
+
+# Editor
+.vscode/
+*.swp
+.DS_Store
