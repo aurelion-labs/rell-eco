@@ -612,6 +612,324 @@ class DatabaseConnector:
 
 
 # ---------------------------------------------------------------------------
+# Profile Check Runner
+# ---------------------------------------------------------------------------
+
+class ProfileCheckRunner:
+    """
+    Runs compliance profile obligation checks against ingested data.
+
+    Reads the 'obligations' array from a loaded profile dict and executes
+    each check_type against available data sources:
+
+        field_present     — checks that required columns exist in schema or
+                            flatfile headers. Fires if ANY required field is absent.
+        null_check        — checks that required fields exist AND have no
+                            null/empty values. Fires if population < threshold.
+        manual_review_flag — always fires; generates a flag for human review.
+
+    Data sources checked (in priority order):
+        1. SQL schema registry  — if a schema map is loaded, checks table columns
+        2. Flatfile headers     — checks headers of any .txt files in intake/txt/
+        3. No data source       — emits an INFO finding: no data to check against
+
+    Each obligation that fires becomes a structured finding with:
+        - profile_id and obligation id
+        - GDPR (or other standard) article reference
+        - severity from the profile
+        - concrete list of missing/null fields
+    """
+
+    def __init__(
+        self,
+        profile: Dict[str, Any],
+        schema_registry: Optional[Any] = None,
+        intake_path: Optional[str] = None,
+    ):
+        self.profile = profile
+        self.schema_registry = schema_registry
+        self.intake_path = Path(intake_path) if intake_path else None
+        self._known_columns: Optional[set] = None  # lazily populated
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def run(self) -> List[Dict[str, Any]]:
+        """
+        Execute all obligations in the profile.
+        Returns a list of finding dicts compatible with AuditEngine's format.
+        """
+        findings = []
+        obligations = self.profile.get("obligations", [])
+        profile_id = self.profile.get("profile_id", "unknown-profile")
+        standard   = self.profile.get("standard", profile_id)
+
+        known_cols = self._get_known_columns()
+
+        for obligation in obligations:
+            check_type = obligation.get("check_type")
+
+            if check_type == "field_present":
+                finding = self._check_field_present(obligation, known_cols, profile_id, standard)
+            elif check_type == "null_check":
+                finding = self._check_null(obligation, known_cols, profile_id, standard)
+            elif check_type == "manual_review_flag":
+                finding = self._make_manual_flag(obligation, profile_id, standard)
+            else:
+                # Unknown check type — emit INFO so operator knows the profile
+                # has an entry Rell doesn't know how to execute yet.
+                finding = self._make_unknown_check_type(obligation, profile_id, standard)
+
+            if finding:
+                findings.append(finding)
+
+        return findings
+
+    # ------------------------------------------------------------------
+    # Check implementations
+    # ------------------------------------------------------------------
+
+    def _check_field_present(
+        self,
+        obligation: Dict[str, Any],
+        known_cols: Optional[set],
+        profile_id: str,
+        standard: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Fire if any required_field is absent from the known column set."""
+        required = obligation.get("required_fields", [])
+        if not required:
+            return None
+
+        if known_cols is None:
+            # No data source available — emit INFO so it shows up in report
+            return self._build_finding(
+                obligation=obligation,
+                profile_id=profile_id,
+                standard=standard,
+                severity="INFO",
+                observation=(
+                    f"No data source available to check for: {', '.join(required)}. "
+                    "Ingest a schema map or place files in data/audit/intake/txt/ "
+                    "before running profile checks."
+                ),
+                suggested_fix="Run --ingest-schema or add intake files, then re-audit.",
+            )
+
+        missing = [f for f in required if f not in known_cols]
+        if not missing:
+            return None  # All fields present — no finding
+
+        return self._build_finding(
+            obligation=obligation,
+            profile_id=profile_id,
+            standard=standard,
+            observation=(
+                f"Required field(s) absent: {', '.join(missing)}. "
+                f"({len(required) - len(missing)}/{len(required)} present)"
+            ),
+            suggested_fix=(
+                f"Add the following columns to your data schema or ETL pipeline: "
+                f"{', '.join(missing)}"
+            ),
+        )
+
+    def _check_null(
+        self,
+        obligation: Dict[str, Any],
+        known_cols: Optional[set],
+        profile_id: str,
+        standard: str,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Fire if required_fields are absent from the column set.
+        For a full null-value count we would need live row data — that requires
+        a SQL connection or parsed flatfile rows. At schema-only level, absence
+        of the column is treated as 100% null (worst case).
+        """
+        required = obligation.get("required_fields", [])
+        if not required:
+            return None
+
+        if known_cols is None:
+            return self._build_finding(
+                obligation=obligation,
+                profile_id=profile_id,
+                standard=standard,
+                severity="INFO",
+                observation=(
+                    f"Cannot verify null population for: {', '.join(required)} — "
+                    "no data source loaded."
+                ),
+                suggested_fix="Ingest a schema or add intake files, then re-audit.",
+            )
+
+        missing = [f for f in required if f not in known_cols]
+        if not missing:
+            # Columns exist — can only confirm presence at schema level.
+            # Emit INFO to indicate row-level null scan needs a live connection.
+            return self._build_finding(
+                obligation=obligation,
+                profile_id=profile_id,
+                standard=standard,
+                severity="INFO",
+                observation=(
+                    f"Column(s) present in schema: {', '.join(required)}. "
+                    "Row-level null population check requires a live database "
+                    "connection (--ingest-schema + credentials). Schema-level "
+                    "check passed."
+                ),
+                suggested_fix=(
+                    "Configure database credentials and re-run to perform "
+                    "row-level null population analysis."
+                ),
+            )
+
+        return self._build_finding(
+            obligation=obligation,
+            profile_id=profile_id,
+            standard=standard,
+            observation=(
+                f"Required field(s) missing entirely (worst-case null): "
+                f"{', '.join(missing)}. These columns do not exist in the "
+                "known schema — null rate is effectively 100%."
+            ),
+            suggested_fix=(
+                f"Add these columns to your schema and populate them: "
+                f"{', '.join(missing)}"
+            ),
+        )
+
+    def _make_manual_flag(
+        self,
+        obligation: Dict[str, Any],
+        profile_id: str,
+        standard: str,
+    ) -> Dict[str, Any]:
+        """Always fires — obligation cannot be automated, human review required."""
+        return self._build_finding(
+            obligation=obligation,
+            profile_id=profile_id,
+            standard=standard,
+            observation=(
+                f"{obligation.get('description', 'Manual review required.')} "
+                f"This obligation ({obligation.get('article', '')}) cannot be "
+                "fully verified by automated scanning and requires human judgement."
+            ),
+            suggested_fix=(
+                "Assign a compliance reviewer to evaluate this obligation "
+                "against actual data practices and document the outcome."
+            ),
+        )
+
+    def _make_unknown_check_type(
+        self,
+        obligation: Dict[str, Any],
+        profile_id: str,
+        standard: str,
+    ) -> Dict[str, Any]:
+        check_type = obligation.get("check_type", "unknown")
+        return self._build_finding(
+            obligation=obligation,
+            profile_id=profile_id,
+            standard=standard,
+            severity="INFO",
+            observation=(
+                f"Unrecognised check_type '{check_type}' in profile '{profile_id}'. "
+                "This obligation was not executed."
+            ),
+            suggested_fix=(
+                f"Add support for check_type='{check_type}' in ProfileCheckRunner, "
+                "or correct the profile JSON."
+            ),
+        )
+
+    # ------------------------------------------------------------------
+    # Data source discovery
+    # ------------------------------------------------------------------
+
+    def _get_known_columns(self) -> Optional[set]:
+        """
+        Build the set of known column names from all available data sources.
+        Returns None if no data sources are available.
+        """
+        if self._known_columns is not None:
+            return self._known_columns
+
+        cols: set = set()
+        found_any = False
+
+        # Source 1: SQL schema registry
+        if self.schema_registry is not None:
+            try:
+                schema = self.schema_registry.load()
+                for server in schema.get("servers", {}).values():
+                    for db in server.get("databases", {}).values():
+                        for table in db.get("tables", {}).values():
+                            for col in table.get("columns", {}).keys():
+                                cols.add(col.lower())
+                if cols:
+                    found_any = True
+            except Exception:
+                pass
+
+        # Source 2: Flatfile headers from intake/txt/
+        if self.intake_path and self.intake_path.exists():
+            for txt_file in self.intake_path.glob("*.txt"):
+                try:
+                    with open(txt_file, "r", encoding="utf-8", errors="replace") as fh:
+                        first_line = fh.readline().strip()
+                    if "|" in first_line:
+                        headers = [h.strip().lower() for h in first_line.split("|")]
+                        cols.update(headers)
+                        found_any = True
+                except Exception:
+                    pass
+
+        self._known_columns = cols if found_any else None
+        return self._known_columns
+
+    # ------------------------------------------------------------------
+    # Finding builder
+    # ------------------------------------------------------------------
+
+    def _build_finding(
+        self,
+        obligation: Dict[str, Any],
+        profile_id: str,
+        standard: str,
+        observation: str,
+        suggested_fix: str = "Review obligation against current data practices.",
+        severity: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Build a finding dict in AuditEngine's standard format."""
+        sev = severity or obligation.get("severity", "MEDIUM")
+        article = obligation.get("article", "")
+        title = obligation.get("title", obligation.get("id", "Profile Obligation"))
+
+        return {
+            "title": f"[{profile_id}] {article} — {title}" if article else f"[{profile_id}] {title}",
+            "profile_id": profile_id,
+            "obligation_id": obligation.get("id", ""),
+            "article": article,
+            "standard": standard,
+            "workflow": f"profile:{profile_id}",
+            "step": obligation.get("id", "unknown"),
+            "severity": sev,
+            "observation": observation,
+            "rell_assessment": (
+                f"{article} ({obligation.get('title', '')}) — {obligation.get('description', '')}"
+                if article else obligation.get("description", "")
+            ),
+            "suggested_fix": suggested_fix,
+            "status": "OPEN",
+            "timestamp": datetime.now().isoformat(),
+            "source": "profile_check",
+        }
+
+
+# ---------------------------------------------------------------------------
 # Core Audit Engine
 # ---------------------------------------------------------------------------
 
@@ -650,12 +968,15 @@ class AuditEngine:
         db_connections: Optional[Dict[str, str]] = None,
         schema_path: Optional[str] = None,
         creds_config_path: Optional[str] = None,
+        compliance_profile: Optional[Dict[str, Any]] = None,
     ):
+        self.compliance_profile = compliance_profile
         self.state_manager = AuditStateManager(data_path)
         self.memory_manager = AuditMemoryManager(memory_path)
         self.trigger_checker = AuditTriggerChecker()
         self.knowledge_base = self._load_knowledge_base(knowledge_base_path)
         self.llm_responder = self._init_llm(llm_provider, llm_api_key, llm_model)
+        self._data_path = Path(data_path)
 
         # SQL Schema Registry — Rell's floor plan for the data layer
         _schema_dir = schema_path or str(Path(data_path) / "schema")
@@ -720,6 +1041,26 @@ class AuditEngine:
             # 3. Log findings to per-workflow journal
             for finding in wf_findings:
                 self.memory_manager.append_finding(wf_name, finding)
+
+        # 3b. Run compliance profile checks (if a profile was loaded)
+        if self.compliance_profile:
+            intake_dir = self._data_path / "intake" / "txt"
+            runner = ProfileCheckRunner(
+                profile=self.compliance_profile,
+                schema_registry=self.schema_registry,
+                intake_path=str(intake_dir),
+            )
+            profile_findings = runner.run()
+            all_findings.extend(profile_findings)
+
+            profile_id = self.compliance_profile.get("profile_id", "profile")
+            for finding in profile_findings:
+                self.memory_manager.append_finding(f"profile_{profile_id}", finding)
+
+            print(
+                f"[Profile] {self.compliance_profile.get('standard', profile_id)}: "
+                f"{len(profile_findings)} obligation(s) flagged."
+            )
 
         # 4. Update audit state summary
         audit_state["summary"]["total_findings"] = (
