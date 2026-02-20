@@ -199,14 +199,14 @@ async def get_report(report_id: str):
 @app.get("/api/report/{report_id}/pdf")
 async def get_report_pdf(report_id: str):
     """
-    Generate and download a PDF of a previously generated report.
+    Generate and download a compliance audit PDF for a previously generated report.
     Requires reportlab: pip install reportlab
     """
     report = _reports.get(report_id)
     if not report:
         raise HTTPException(status_code=404, detail="Report not found.")
 
-    from .pdf_export import generate_pdf  # lazy import — only needed when PDF is requested
+    from .pdf_export import generate_pdf  # lazy import
 
     loop = asyncio.get_event_loop()
     try:
@@ -215,6 +215,32 @@ async def get_report_pdf(report_id: str):
         raise HTTPException(status_code=500, detail=f"PDF generation failed: {exc}")
 
     filename = f"rell_audit_{report_id[:8]}.pdf"
+    return StreamingResponse(
+        BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+@app.get("/api/report/{report_id}/workload-pdf")
+async def get_workload_pdf(report_id: str):
+    """
+    Generate and download a workload distribution PDF for a previously generated workload report.
+    """
+    report = _reports.get(report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found.")
+
+    from .pdf_export import generate_workload_pdf  # lazy import
+
+    loop = asyncio.get_event_loop()
+    try:
+        pdf_bytes = await loop.run_in_executor(None, lambda: generate_workload_pdf(report))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Workload PDF generation failed: {exc}")
+
+    safe_name = report.get("filename", "workload").replace(" ", "_").replace(".xlsx", "")
+    filename  = f"rell_workload_{safe_name}.pdf"
     return StreamingResponse(
         BytesIO(pdf_bytes),
         media_type="application/pdf",

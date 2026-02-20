@@ -1,0 +1,18 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Data — keep the folder but not uploaded files
+data/intake/*.xlsx
+data/intake/*.csv
+data/reports/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+*.code-workspace

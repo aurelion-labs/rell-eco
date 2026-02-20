@@ -1,20 +1,7 @@
 """
-Rell PDF Export — reportlab compliance report generator.
+Rell Workload PDF Export
 
-Generates a clean, professional PDF audit report suitable for
-presentation to legal, compliance, or board-level audiences.
-
-Structure:
-    Page 1  — Cover (RELL wordmark, profile, date, summary counts)
-    Page 2  — Executive Summary (severity table, Rell's opening)
-    Page 3+ — Detailed Findings (one block per finding, severity-coded)
-              Rell's Closing Assessment
-
-Usage:
-    from web.pdf_export import generate_pdf
-    pdf_bytes = generate_pdf(report_dict)
-    with open("report.pdf", "wb") as f:
-        f.write(pdf_bytes)
+Generates a workload distribution PDF suitable for management review.
 """
 
 from io import BytesIO
@@ -38,25 +25,22 @@ from reportlab.platypus import (
     KeepTogether,
 )
 
-# ---------------------------------------------------------------------------
-# Severity palette
-# ---------------------------------------------------------------------------
+PAGE_W, PAGE_H = A4
+CONTENT_W = PAGE_W - 4 * cm
 
-_COLORS = {
-    "CRITICAL": HexColor("#CC0000"),
-    "HIGH":     HexColor("#CC5500"),
-    "MEDIUM":   HexColor("#AA8800"),
-    "LOW":      HexColor("#2255AA"),
-    "INFO":     HexColor("#555555"),
-}
 
-_BG = {
-    "CRITICAL": HexColor("#FFF5F5"),
-    "HIGH":     HexColor("#FFF8F0"),
-    "MEDIUM":   HexColor("#FDFDF0"),
-    "LOW":      HexColor("#F0F5FF"),
-    "INFO":     HexColor("#F8F8F8"),
-}
+def _on_page(canvas, doc):
+    canvas.saveState()
+    canvas.setFont('Helvetica', 8)
+    canvas.setFillColor(HexColor('#999999'))
+    canvas.drawString(2 * cm, 1.2 * cm, 'RELL WORKLOAD TRACKER — CONFIDENTIAL')
+    canvas.drawRightString(PAGE_W - 2 * cm, 1.2 * cm, f'Page {doc.page}')
+    canvas.restoreState()
+
+
+def _s(name: str, base, **kw) -> ParagraphStyle:
+    return ParagraphStyle(name, parent=base, **kw)
+
 
 # ---------------------------------------------------------------------------
 # Workload load status palette

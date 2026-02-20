@@ -17,8 +17,12 @@
     "Erica Hsu",
     "Haley Menard",
     "Tara Jerideau",
-    "Robin B"
+    "Robin Mark"
   ],
+  "_name_aliases_comment": "Explicit name mappings for analysts whose name appears differently in the spreadsheet (e.g. maiden vs married name). Key = name as it appears in Excel, value = canonical display name.",
+  "name_aliases": {
+    "Robin B": "Robin Mark"
+  },
   "_other_teams_comment": "Analysts on external teams (Team Kennedy, etc.) — excluded from all workload output entirely.",
   "other_teams": [
     "Beth H",

@@ -1,0 +1,95 @@
+{
+  "_EDIT_INSTRUCTIONS": "You can safely add or remove analyst names in this file. Names must match EXACTLY as they appear in the Excel workbook. Save the file, then restart the app to see changes.",
+
+  "us_da_team": {
+    "_comment": "US-based Data Analysts — managed by Kiara and Josefina. Add new analysts here when they join. Remove (or move to review_flags.departed) when they leave.",
+    "members": [
+      "Javier Couso",
+      "Chase Key",
+      "Colin Maxwell",
+      "Hollie Campbell",
+      "Adam Schmitz",
+      "Hoang Nguyen",
+      "Katie Reid",
+      "Courtney Bryant",
+      "Tucker Zetterburg",
+      "Zack Rose",
+      "Jake Johnson",
+      "John Moffitt",
+      "Michael Matlock",
+      "Jack Jeffries",
+      "Kelly Aiken",
+      "Kenny Sullens",
+      "Andrew Bybee",
+      "Robert Evenson",
+      "Bryce Craig",
+      "Jenny Rose",
+      "Ryan Lemons"
+    ]
+  },
+
+  "ph_da_team": {
+    "_comment": "Philippines-based Data Analysts — managed by Auie.",
+    "manager": "Auie",
+    "members": [
+      "Rosan Nila Batalla",
+      "Maria Camille Gonzales",
+      "Catrina Baguio",
+      "Japeth Jalando-on",
+      "Dennis Hadlocon",
+      "Patrixia Kate Nunag",
+      "Joshua Alec Trofeo",
+      "Jenny Rose Padua",
+      "Julie Rose Arceta",
+      "Paul Justin Mallari",
+      "Flordelia Aguinaldo",
+      "Jeraldine Calagui"
+    ]
+  },
+
+  "dqs_team": {
+    "_comment": "Data Quality Specialists. Analysts here are shown in the DQS table instead of the DA tables.",
+    "members": [
+      "David Parker",
+      "Kayleigh Kinslow",
+      "Erica Hsu",
+      "Haley Menard",
+      "Tara Jerideau",
+      "Robin Mark"
+    ]
+  },
+
+  "exclude_entirely": {
+    "_comment": "Analysts on other teams (Team Kennedy, etc.) who appear in the Excel but are NOT part of this team. They will be silently excluded from all output.",
+    "members": [
+      "Beth H",
+      "Kayla Wallace",
+      "Trey Lennox"
+    ]
+  },
+
+  "review_flags": {
+    "_comment": "Analysts shown below a separator in their table with a flag. They are NOT included in workload averages. Update this list rather than deleting entries — it creates a record.", 
+    "partial_data": {
+      "_reason": "Analyst's full workload is not yet in the spreadsheet",
+      "members": ["Matthew Jay", "Wayne Allen"]
+    },
+    "departed": {
+      "_reason": "Analyst has left the company — remove their feeds from the sheet",
+      "members": ["Michelle Albea"]
+    },
+    "cross_collab": {
+      "_reason": "Analyst is from another team, shown for visibility only",
+      "members": ["David Parker"]
+    },
+    "other_roles": {
+      "_reason": "Not a DA or DQS role",
+      "members": ["Adam Rollings"]
+    }
+  },
+
+  "name_aliases": {
+    "_comment": "Maps old or alternate spellings to the correct name. Key = name as it appears in Excel, Value = correct canonical name. Useful for married name changes.",
+    "Robin B": "Robin Mark"
+  }
+}

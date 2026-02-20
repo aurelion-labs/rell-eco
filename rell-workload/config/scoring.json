@@ -1,0 +1,39 @@
+{
+  "_ADMIN_NOTE": "Scoring formula weights. These control how workload points are calculated. Do not expose this file to end users.",
+  "_LAST_UPDATED": "2026-02-19",
+
+  "volume_unit": 1000000,
+  "volume_weight": 0.0,
+  "_volume_note": "Set to 0 until accurate volume data is available in the Excel. Enabling this requires reliable weekly record counts.",
+
+  "base_feed_points": 1.0,
+  "_base_note": "Every assigned feed earns 1.0 point baseline before multipliers.",
+
+  "sheet_type_multipliers": {
+    "_comment": "Multiplier applied based on the source sheet. LeadList court feeds are more complex; State_SME is territory reference only.",
+    "LeadList-Master": 2.0,
+    "State_SME": 0.5
+  },
+
+  "ll_role_weight": 3.0,
+  "_ll_note": "Lead List Responsibility column — court ownership is high-complexity work.",
+
+  "dqs_role_weight": 1.0,
+  "_dqs_note": "DQS Responsible column — data quality responsibility.",
+
+  "backup_role_weight": 0.5,
+  "_backup_note": "Back-up DA column — secondary coverage, not primary workload.",
+
+  "overload_threshold_pct": 25,
+  "_overload_note": "Analyst is flagged OVERLOADED if their points are >25% above team average.",
+
+  "underload_threshold_pct": 25,
+  "_underload_note": "Analyst is flagged UNDERLOADED if their points are >25% below team average.",
+
+  "max_recommended_points": 40.0,
+  "_max_note": "Soft ceiling per analyst. Used for capacity calculations in assignment recommendations.",
+
+  "use_excel_score": false,
+  "recalculate_for_validation": false,
+  "frequency_defaults": { "unknown": 1.0 }
+}
