@@ -1,0 +1,167 @@
+{
+  "profile_id": "team-roster",
+  "type": "internal",
+  "version": "0.1.0",
+  "org": "RELL Audit Engine",
+  "created": "2026-02-19",
+  "last_reviewed": "2026-02-19",
+  "notes": "Canonical team/role roster for the DA + DQS workload scoring engine. This profile drives team segmentation, deviation calculations, and display tagging in run_audit.py. Update this file (and scoring_config.json dqs_team / other_teams / partial_data / departed / cross_collab / other_roles lists) when the roster changes.",
+
+  "managers": [
+    {
+      "name": "Kiara",
+      "team": "US DA",
+      "region": "United States",
+      "notes": "Co-manages the US Data Analyst team with Josefina."
+    },
+    {
+      "name": "Josefina",
+      "team": "US DA",
+      "region": "United States",
+      "notes": "Co-manages the US Data Analyst team with Kiara."
+    },
+    {
+      "name": "Auie",
+      "team": "Philippines DA",
+      "region": "Philippines",
+      "notes": "Manages the Philippines-based Data Analyst team."
+    }
+  ],
+
+  "teams": {
+    "us_da": {
+      "label": "US Data Analyst Team",
+      "managers": ["Kiara", "Josefina"],
+      "region": "United States",
+      "scoring_group": "active",
+      "analysts": [
+        "Javier Couso",
+        "Chase Key",
+        "Adam Schmitz",
+        "Courtney Bryant",
+        "Jake Johnson",
+        "Katie Reid",
+        "Zack Rose",
+        "John Moffitt",
+        "Tucker Zetterburg",
+        "Michael Matlock",
+        "Hollie Campbell",
+        "Colin Maxwell",
+        "Hoang Nguyen",
+        "Kenny Sullens",
+        "Jack Jeffries",
+        "Robin Mark",
+        "Andrew Bybee",
+        "Jenny Rose",
+        "Kelly Aiken",
+        "Bryce Craig",
+        "Robert Evenson"
+      ]
+    },
+    "philippines_da": {
+      "label": "Philippines Data Analyst Team",
+      "managers": ["Auie"],
+      "region": "Philippines",
+      "scoring_group": "active",
+      "analysts": [
+        "Rosan Nila Batalla",
+        "Maria Camille Gonzales",
+        "Catrina Baguio",
+        "Japeth Jalando-on",
+        "Dennis Hadlocon",
+        "Patrixia Kate Nunag",
+        "Joshua Alec Trofeo",
+        "Jenny Rose Padua",
+        "Julie Rose Arceta",
+        "Paul Justin Mallari",
+        "Flordelia Aguinaldo",
+        "Jeraldine Calagui"
+      ]
+    },
+    "dqs": {
+      "label": "Data Quality Specialist Team",
+      "managers": [],
+      "region": "United States",
+      "scoring_group": "active",
+      "notes": "DQS responsibilities scored separately from DA. DQS also performs QA on source formatting — this is rare and not gated. A separate DQS responsibility sheet is forthcoming; when available, drop it into data/audit/intake/excel/ and it will be picked up automatically.",
+      "analysts": [
+        "Erica Hsu",
+        "Tara Jerideau",
+        "Kayleigh Kinslow",
+        "Robin B",
+        "Haley Menard"
+      ]
+    }
+  },
+
+  "special_cases": {
+    "partial_data": {
+      "label": "[partial]",
+      "description": "Analysts whose full workload is not yet fully charted in the Workload Tracker. Shown in their team table below the separator line but excluded from deviation calculations.",
+      "analysts": [
+        {
+          "name": "Matthew Jay",
+          "team": "US DA",
+          "notes": "On Team Lincoln. Workload is not fully represented in this tracker yet."
+        },
+        {
+          "name": "Wayne Allen",
+          "team": "US DA",
+          "notes": "On Team Lincoln. Workload is not fully represented in this tracker yet."
+        }
+      ]
+    },
+    "departed": {
+      "label": "[departed]",
+      "description": "Analysts who have left the company. Still visible in output so reviewers know the Workload Tracker sheet needs to be updated.",
+      "analysts": [
+        {
+          "name": "Michelle Albea",
+          "team": "US DA",
+          "notes": "Former manager. Responsibilities have been redistributed to other managers. Sheet entries may still reference her — these should be reassigned."
+        }
+      ]
+    },
+    "cross_collab": {
+      "label": "[x-collab]",
+      "description": "Analysts from other teams who cross-collaborate with DA/DQS. Shown in the DQS table for visibility but excluded from team averages.",
+      "analysts": [
+        {
+          "name": "David Parker",
+          "team": "DQS (display only)",
+          "notes": "Primarily on a different team. Cross-collaborates to help DA/DQS teams. Not a full DQS headcount."
+        }
+      ]
+    },
+    "other_roles": {
+      "label": "[biz-ops]",
+      "description": "Non-DA/DQS roles that appear in the Workload Tracker. Shown for transparency but excluded from team averages.",
+      "analysts": [
+        {
+          "name": "Adam Rollings",
+          "team": "US DA (display only)",
+          "notes": "Senior Business Operations Analyst. Different role from DA — workload metrics are not directly comparable."
+        }
+      ]
+    },
+    "other_teams": {
+      "label": "excluded",
+      "description": "Analysts on entirely external teams (e.g. Team Kennedy). Excluded from all workload output. If they appear in the Workload Tracker sheet, those entries are informational only.",
+      "analysts": [
+        { "name": "Beth H",        "notes": "External team." },
+        { "name": "Kayla Wallace", "notes": "External team." },
+        { "name": "Trey Lennox",   "notes": "External team." }
+      ]
+    }
+  },
+
+  "scoring_config_ref": "data/audit/workload/scoring_config.json",
+  "workload_tracker_ref": "data/audit/intake/excel/Workload_Tracker_V3.xlsx",
+
+  "pending": [
+    "Robin B full name unknown — confirm if Robin B = Robin Mark or a different person (different initials, will not auto-merge).",
+    "DQS responsibility sheet not yet available. When received, drop into data/audit/intake/excel/ — if it has an assignee column it will be picked up automatically.",
+    "Team Lincoln workload (Matthew Jay, Wayne Allen) not yet charted. Remove [partial] tag once their full data is in the tracker.",
+    "Michelle Albea entries in the tracker should be reassigned. Remove [departed] tag once the sheet is cleaned up."
+  ]
+}

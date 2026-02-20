@@ -1,0 +1,12 @@
+{
+  "profile_id": "workload-tracker",
+  "type": "workload",
+  "version": "0.1.0",
+  "standard": "Workload Distribution Analysis",
+  "jurisdiction": "Internal",
+  "created": "2026-02-19",
+  "last_reviewed": "2026-02-19",
+  "notes": "Drop a Workload Tracker .xlsx into the intake folder and run this profile to see per-team analyst workload, deviation from team average, and capacity flags. Teams: US DA (Kiara & Josefina), Philippines DA (Auie), DQS. Config lives in data/audit/workload/scoring_config.json.",
+  "roster_ref": "profiles/workload/team-roster.json",
+  "scoring_config_ref": "data/audit/workload/scoring_config.json"
+}

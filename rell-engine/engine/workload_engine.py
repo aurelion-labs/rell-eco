@@ -155,6 +155,54 @@ class WorkloadScorer:
         "ll_role_weight":     3.0,
         "dqs_role_weight":    1.0,
         "backup_role_weight": 0.5,
+        # Canonical full names of DQS specialists. Analysts here (or with zero
+        # primary/LL credits) are shown in the DQS Workload table, not the DA table.
+        "dqs_team": [
+            "David Parker",
+            "Kayleigh Kinslow",
+            "Erica Hsu",
+            "Haley Menard",
+            "Tara Jerideau",
+            "Robin B",
+        ],
+        # Analysts on external teams (Team Kennedy etc.) — excluded from all output.
+        "other_teams": [
+            "Beth H",
+            "Kayla Wallace",
+            "Trey Lennox",
+        ],
+        # Analysts with incomplete workload data. Shown with [partial] tag, excluded from deviations.
+        "partial_data": [
+            "Matthew Jay",
+            "Wayne Allen",
+        ],
+        # Analysts who have left the company. Shown with [departed] tag so reviewers update the sheet.
+        "departed": [
+            "Michelle Albea",
+        ],
+        # Cross-team collaborators. Shown with [cross-collab] tag, excluded from team averages.
+        "cross_collab": [
+            "David Parker",
+        ],
+        # Non-DA/DQS roles. Shown with [biz-ops] tag, excluded from team averages.
+        "other_roles": [
+            "Adam Rollings",
+        ],
+        # Auie's Philippines DA team. All other DAs default to the US team.
+        "philippines_team": [
+            "Rosan Nila Batalla",
+            "Maria Camille Gonzales",
+            "Catrina Baguio",
+            "Japeth Jalando-on",
+            "Dennis Hadlocon",
+            "Patrixia Kate Nunag",
+            "Joshua Alec Trofeo",
+            "Jenny Rose Padua",
+            "Julie Rose Arceta",
+            "Paul Justin Mallari",
+            "Flordelia Aguinaldo",
+            "Jeraldine Calagui",
+        ],
         "time_weight": 0.5,
         "difficulty_weight": 0.5,
         "deviation_alert_pct": 20,
@@ -336,6 +384,9 @@ class WorkloadAnalyzer:
 
         Returns:
             Full analysis dict including per-analyst breakdown and team stats.
+            Analysts are tagged by team (DA or DQS) based on:
+              1. Explicit membership in the 'dqs_team' config list, OR
+              2. Auto-detection: zero primary/LL feed credits (only dqs/backup/sme roles)
         """
         # Build name normalization map across all assignee values in this dataset
         all_names = [
@@ -344,6 +395,36 @@ class WorkloadAnalyzer:
             if str(r.get("assignee", "")).strip()
         ]
         name_map = self._build_name_map(list(set(all_names)))
+
+        # Build DQS team set — normalize configured names through the same name_map
+        raw_dqs_team: List[str] = [
+            v for v in self.config.get("dqs_team", [])
+            if isinstance(v, str) and not v.startswith("_")
+        ]
+        dqs_team_set: set = set()
+        for name in raw_dqs_team:
+            canonical = name_map.get(name, name)
+            dqs_team_set.add(canonical.lower())
+
+        # Build exclusion set for external-team analysts (Team Kennedy etc.)
+        raw_other_teams: List[str] = [
+            v for v in self.config.get("other_teams", [])
+            if isinstance(v, str) and not v.startswith("_")
+        ]
+        other_teams_set: set = set()
+        for name in raw_other_teams:
+            canonical = name_map.get(name, name)
+            other_teams_set.add(canonical.lower())
+
+        # Build Philippines team set (Auie's team)
+        raw_ph_team: List[str] = [
+            v for v in self.config.get("philippines_team", [])
+            if isinstance(v, str) and not v.startswith("_")
+        ]
+        philippines_team_set: set = set()
+        for name in raw_ph_team:
+            canonical = name_map.get(name, name)
+            philippines_team_set.add(canonical.lower())
 
         # Group feeds by analyst (using canonical name)
         by_analyst: Dict[str, List[Dict[str, Any]]] = {}
@@ -355,48 +436,125 @@ class WorkloadAnalyzer:
                 unassigned.append(r)
                 continue
             canonical = name_map.get(assignee, assignee)
+            if canonical.lower() in other_teams_set:
+                continue  # external team analyst — excluded from all output
             by_analyst.setdefault(canonical, []).append(r)
 
-        # Build per-analyst summaries
+        # Build per-analyst summaries + tag team
         analyst_summaries: Dict[str, Dict[str, Any]] = {}
         for analyst, feeds in by_analyst.items():
-            analyst_summaries[analyst] = self._summarize_analyst(analyst, feeds)
+            summary = self._summarize_analyst(analyst, feeds)
 
-        # Team stats
+            # Auto-detect DQS: no primary/LL feeds at all → likely DQS/SME-only
+            has_primary = any(
+                r.get("_role", "primary") not in ("backup", "dqs")
+                for r in feeds
+            )
+            in_dqs_list = analyst.lower() in dqs_team_set
+            is_dqs = in_dqs_list or (not has_primary)
+            summary["team"] = "DQS" if is_dqs else "DA"
+            summary["team_source"] = "config" if in_dqs_list else ("auto" if is_dqs else "config")
+
+            analyst_summaries[analyst] = summary
+
+        # Segment by team
+        da_summaries  = {k: v for k, v in analyst_summaries.items() if v["team"] == "DA"}
+        dqs_summaries = {k: v for k, v in analyst_summaries.items() if v["team"] == "DQS"}
+
+        # Split DA into US (Kiara + Josefina) and Philippines (Auie)
+        us_da_summaries = {k: v for k, v in da_summaries.items() if k.lower() not in philippines_team_set}
+        ph_da_summaries = {k: v for k, v in da_summaries.items() if k.lower() in philippines_team_set}
+
+        # Assign display tags — these analysts still appear in their table but are
+        # excluded from deviation calculations and overload/underload flagging.
+        def _make_tagged_set(key: str) -> set:
+            raw = [v for v in self.config.get(key, []) if isinstance(v, str) and not v.startswith("_")]
+            return {name_map.get(n, n).lower() for n in raw}
+
+        _partial_set      = _make_tagged_set("partial_data")
+        _departed_set     = _make_tagged_set("departed")
+        _cross_collab_set = _make_tagged_set("cross_collab")
+        _other_roles_set  = _make_tagged_set("other_roles")
+
+        for analyst, summary in analyst_summaries.items():
+            al = analyst.lower()
+            if al in _partial_set:
+                summary["display_tag"] = "partial"
+            elif al in _departed_set:
+                summary["display_tag"] = "departed"
+            elif al in _cross_collab_set:
+                summary["display_tag"] = "x-collab"
+            elif al in _other_roles_set:
+                summary["display_tag"] = "biz-ops"
+            elif summary.get("team_source") == "auto":
+                summary["display_tag"] = "auto"
+            else:
+                summary["display_tag"] = ""
+
+        # Per-sub-group deviation + overload flags.
+        # Only active analysts (no display_tag) contribute to the group average.
+        for group_summaries in (us_da_summaries, ph_da_summaries, dqs_summaries):
+            active_pts = [
+                s["total_points"] for s in group_summaries.values()
+                if not s.get("display_tag")
+            ]
+            team_avg = sum(active_pts) / len(active_pts) if active_pts else 0.0
+            for summary in group_summaries.values():
+                pts = summary["total_points"]
+                summary["capacity_remaining"] = max(0.0, round(self.max_recommended - pts, 4))
+                if summary.get("display_tag"):
+                    # Tagged: informational only — not compared against team average
+                    summary["deviation_from_avg_pct"] = None
+                    summary["load_status"] = "NOTE"
+                elif team_avg > 0:
+                    deviation = (pts - team_avg) / team_avg * 100
+                    summary["deviation_from_avg_pct"] = round(deviation, 1)
+                    if deviation > self.overload_threshold_pct:
+                        summary["load_status"] = "OVERLOADED"
+                    elif deviation < -self.underload_threshold_pct:
+                        summary["load_status"] = "UNDERLOADED"
+                    else:
+                        summary["load_status"] = "BALANCED"
+                else:
+                    summary["deviation_from_avg_pct"] = 0.0
+                    summary["load_status"] = "UNKNOWN"
+
         all_points = [a["total_points"] for a in analyst_summaries.values()]
-        team_avg = sum(all_points) / len(all_points) if all_points else 0.0
         team_total = sum(all_points)
 
-        # Flag overload / underload
-        for analyst, summary in analyst_summaries.items():
-            pts = summary["total_points"]
-            if team_avg > 0:
-                deviation = (pts - team_avg) / team_avg * 100
-                summary["deviation_from_avg_pct"] = round(deviation, 1)
-                if deviation > self.overload_threshold_pct:
-                    summary["load_status"] = "OVERLOADED"
-                elif deviation < -self.underload_threshold_pct:
-                    summary["load_status"] = "UNDERLOADED"
-                else:
-                    summary["load_status"] = "BALANCED"
-            else:
-                summary["deviation_from_avg_pct"] = 0.0
-                summary["load_status"] = "UNKNOWN"
-
-            summary["capacity_remaining"] = max(
-                0.0, round(self.max_recommended - pts, 4)
-            )
+        def _tstats(summaries: Dict[str, Dict]) -> Dict:
+            # Stats reflect active analysts only (tagged analysts excluded from averages)
+            active = {k: v for k, v in summaries.items() if not v.get("display_tag")}
+            pts = [s["total_points"] for s in active.values()]
+            total = sum(pts)
+            avg   = total / len(pts) if pts else 0.0
+            return {
+                "analyst_count": len(active),
+                "feed_count":    sum(s["feed_count"] for s in active.values()),
+                "total_team_points": round(total, 4),
+                "average_points_per_analyst": round(avg, 4),
+            }
 
         return {
             "analyst_summaries": analyst_summaries,
+            "da_summaries":      da_summaries,
+            "dqs_summaries":     dqs_summaries,
+            "us_da_summaries":   us_da_summaries,
+            "ph_da_summaries":   ph_da_summaries,
             "team_stats": {
-                "analyst_count": len(analyst_summaries),
-                "feed_count": len(scored_records) - len(unassigned),
+                "analyst_count":    len(analyst_summaries),
+                "feed_count":       len(scored_records) - len(unassigned),
                 "unassigned_count": len(unassigned),
                 "total_team_points": round(team_total, 4),
-                "average_points_per_analyst": round(team_avg, 4),
+                "average_points_per_analyst": round(
+                    team_total / max(len(analyst_summaries), 1), 4
+                ),
                 "max_recommended_per_analyst": self.max_recommended,
             },
+            "da_team_stats":    _tstats(da_summaries),
+            "us_da_team_stats": _tstats(us_da_summaries),
+            "ph_da_team_stats": _tstats(ph_da_summaries),
+            "dqs_team_stats":   _tstats(dqs_summaries),
             "unassigned_feeds": [
                 {
                     "feed_name": r.get("feed_name", r.get("feed_id", "UNKNOWN")),
@@ -876,6 +1034,14 @@ class WorkloadAuditEngine:
             "fields_detected": parser.canonical_headers,
             "team_stats": team_stats,
             "analyst_summaries": analysis.get("analyst_summaries", {}),
+            "da_summaries":      analysis.get("da_summaries",     {}),
+            "dqs_summaries":     analysis.get("dqs_summaries",    {}),
+            "us_da_summaries":   analysis.get("us_da_summaries",  {}),
+            "ph_da_summaries":   analysis.get("ph_da_summaries",  {}),
+            "da_team_stats":     analysis.get("da_team_stats",    {}),
+            "us_da_team_stats":  analysis.get("us_da_team_stats", {}),
+            "ph_da_team_stats":  analysis.get("ph_da_team_stats", {}),
+            "dqs_team_stats":    analysis.get("dqs_team_stats",   {}),
             "unassigned_feeds": analysis.get("unassigned_feeds", []),
             "validation_warnings": validation_warnings,
             "assignment_recommendation": recommendation,
@@ -982,12 +1148,12 @@ class WorkloadAuditEngine:
             f"",
         ]
 
-        status_icons = {"OVERLOADED": "🔴", "UNDERLOADED": "🟡", "BALANCED": "🟢", "UNKNOWN": "⚪"}
+        status_icons = {"OVERLOADED": "🔴", "UNDERLOADED": "🟡", "BALANCED": "🟢", "UNKNOWN": "⚪", "NOTE": "📋"}
 
         for analyst, summary in sorted(summaries.items(), key=lambda x: -x[1]["total_points"]):
             icon = status_icons.get(summary.get("load_status", "UNKNOWN"), "⚪")
-            dev = summary.get("deviation_from_avg_pct", 0)
-            dev_str = f"+{dev:.1f}%" if dev > 0 else f"{dev:.1f}%"
+            dev = summary.get("deviation_from_avg_pct")
+            dev_str = (f"+{dev:.1f}%" if dev > 0 else f"{dev:.1f}%") if dev is not None else "n/a"
             cap = summary.get("capacity_remaining", 0)
             lines += [
                 f"### {icon} {analyst}",

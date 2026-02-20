@@ -10,6 +10,53 @@
   "ll_role_weight": 3.0,
   "dqs_role_weight": 1.0,
   "backup_role_weight": 0.5,
+  "_dqs_team_comment": "Canonical full names of DQS (Data Quality Specialist) analysts. Analysts in this list (or with zero primary/LL feed credits) are grouped under the DQS Workload table.",
+  "dqs_team": [
+    "David Parker",
+    "Kayleigh Kinslow",
+    "Erica Hsu",
+    "Haley Menard",
+    "Tara Jerideau",
+    "Robin B"
+  ],
+  "_other_teams_comment": "Analysts on external teams (Team Kennedy, etc.) — excluded from all workload output entirely.",
+  "other_teams": [
+    "Beth H",
+    "Kayla Wallace",
+    "Trey Lennox"
+  ],
+  "_partial_data_comment": "Analysts whose full workload is not yet charted here. Shown in their team table with [partial] tag but excluded from deviation calculations.",
+  "partial_data": [
+    "Matthew Jay",
+    "Wayne Allen"
+  ],
+  "_departed_comment": "Analysts who have left the company. Shown with [departed] tag so reviewers know to clean up the sheet.",
+  "departed": [
+    "Michelle Albea"
+  ],
+  "_cross_collab_comment": "Analysts from other teams who cross-collaborate. Shown with [cross-collab] tag, excluded from team averages.",
+  "cross_collab": [
+    "David Parker"
+  ],
+  "_other_roles_comment": "Non-DA/DQS roles (e.g. Senior Biz Ops). Shown with [biz-ops] tag, excluded from team averages.",
+  "other_roles": [
+    "Adam Rollings"
+  ],
+  "_philippines_team_comment": "Canonical names of Auie's Philippines-based DA team. All other DAs default to the US team (Kiara + Josefina).",
+  "philippines_team": [
+    "Rosan Nila Batalla",
+    "Maria Camille Gonzales",
+    "Catrina Baguio",
+    "Japeth Jalando-on",
+    "Dennis Hadlocon",
+    "Patrixia Kate Nunag",
+    "Joshua Alec Trofeo",
+    "Jenny Rose Padua",
+    "Julie Rose Arceta",
+    "Paul Justin Mallari",
+    "Flordelia Aguinaldo",
+    "Jeraldine Calagui"
+  ],
   "time_weight": 0.5,
   "difficulty_weight": 0.5,
   "deviation_alert_pct": 20,

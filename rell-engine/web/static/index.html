@@ -461,16 +461,98 @@
       margin-bottom: 16px;
     }
 
-    /* ── Responsive ─────────────────────────────────────────────────────── */
-    @media (max-width: 720px) {
-      .layout { flex-direction: column; }
-      .controls {
-        width: 100%;
-        border-right: none;
-        border-bottom: 1px solid var(--border);
-        overflow-y: visible;
-      }
-      .results { padding: 20px 16px; }
+    /* ── Workload view ───────────────────────────────────────────────────── */
+    .wl-team-block {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-bottom: 18px;
+      overflow: hidden;
+    }
+    .wl-team-header {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      padding: 11px 16px 8px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface2);
+    }
+    .wl-team-title {
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      color: var(--text);
+    }
+    .wl-team-sub {
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .wl-team-stats {
+      padding: 6px 16px;
+      font-size: 12px;
+      color: var(--muted);
+      border-bottom: 1px solid var(--border);
+      background: var(--surface2);
+    }
+    .wl-dot { margin: 0 5px; opacity: 0.4; }
+    .wl-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    .wl-table thead th {
+      padding: 7px 12px;
+      text-align: left;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.4px;
+      text-transform: uppercase;
+      color: var(--muted);
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .wl-table tbody td {
+      padding: 7px 12px;
+      border-bottom: 1px solid var(--border);
+      color: var(--text);
+      white-space: nowrap;
+    }
+    .wl-table tbody tr:last-child td { border-bottom: none; }
+    .wl-table tbody tr:hover { background: var(--surface2); }
+    .wl-name { color: var(--text); font-weight: 500; width: 100%; }
+    .wl-badge {
+      display: inline-block;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-family: monospace;
+    }
+    .wl-crit  { background: var(--crit-bg);  color: var(--crit);  border: 1px solid var(--crit-border); }
+    .wl-low   { background: var(--low-bg);   color: var(--low);   border: 1px solid var(--low-border);  }
+    .wl-med   { background: var(--med-bg);   color: var(--med);   border: 1px solid var(--med-border);  }
+    .wl-info  { background: var(--info-bg);  color: var(--info);  border: 1px solid var(--info-border); }
+    .wl-note  { background: var(--surface2); color: var(--muted); border: 1px solid var(--border); }
+    .wl-dev-crit { color: var(--crit); }
+    .wl-dev-low  { color: var(--low);  }
+    .wl-dev-med  { color: var(--med);  }
+    .wl-dev-info { color: var(--muted); }
+    .wl-tagged-row td { color: var(--muted); opacity: 0.7; }
+    .wl-tag-pill {
+      font-size: 10px;
+      font-family: monospace;
+      color: var(--muted);
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1px 6px;
+    }
+    .wl-sep-row td { padding: 4px 0; }
+    .wl-sep-line {
+      border-top: 1px dashed var(--border);
+      margin: 0 12px;
     }
   </style>
 </head>
@@ -567,7 +649,12 @@
         data.profiles.forEach(p => {
           const o = document.createElement("option");
           o.value = p.id;
-          o.textContent = `${p.id}  (${p.obligations} checks)  ·  ${p.jurisdiction}`;
+          o.dataset.profileType = p.type || "compliance";
+          if (p.type === "workload") {
+            o.textContent = `${p.id}  ·  ${p.standard}`;
+          } else {
+            o.textContent = `${p.id}  (${p.obligations} checks)  ·  ${p.jurisdiction}`;
+          }
           sel.appendChild(o);
         });
       } catch (e) {
@@ -620,8 +707,10 @@
 
     // ── Run audit ────────────────────────────────────────────────────────────
     async function runAudit() {
-      const profileId = document.getElementById("profile-sel").value;
+      const sel       = document.getElementById("profile-sel");
+      const profileId = sel.value;
       if (!profileId) { setStatus("Select a profile first."); return; }
+      const profileType = sel.options[sel.selectedIndex].dataset.profileType || "compliance";
 
       const btn  = document.getElementById("btn-run");
       const spin = document.getElementById("spin");
@@ -634,18 +723,31 @@
       setStatus("Rell is reviewing…");
 
       try {
-        const data = await apiFetch("/api/audit/run", {
-          method:  "POST",
-          headers: { "Content-Type": "application/json" },
-          body:    JSON.stringify({
-            profile_id:   profileId,
-            llm_provider: selectedLlm || null,
-          }),
-        });
-        reportId = data.report_id;
-        renderResults(data.report, profileId);
-        const total = data.report?.summary?.total_findings ?? 0;
-        setStatus("Complete — " + total + " finding" + (total === 1 ? "" : "s"));
+        let data;
+        if (profileType === "workload") {
+          data = await apiFetch("/api/workload/run", {
+            method:  "POST",
+            headers: { "Content-Type": "application/json" },
+            body:    JSON.stringify({}),
+          });
+          reportId = data.report_id;
+          renderWorkloadResults(data.report);
+          const n = data.report?.team_stats?.analyst_count ?? 0;
+          setStatus(`Complete — ${n} analysts tracked`);
+        } else {
+          data = await apiFetch("/api/audit/run", {
+            method:  "POST",
+            headers: { "Content-Type": "application/json" },
+            body:    JSON.stringify({
+              profile_id:   profileId,
+              llm_provider: selectedLlm || null,
+            }),
+          });
+          reportId = data.report_id;
+          renderResults(data.report, profileId);
+          const total = data.report?.summary?.total_findings ?? 0;
+          setStatus("Complete — " + total + " finding" + (total === 1 ? "" : "s"));
+        }
       } catch (e) {
         renderError(e.message);
         setStatus("Audit failed.");
@@ -657,7 +759,144 @@
       }
     }
 
-    // ── Render results ────────────────────────────────────────────────────────
+    // ── Workload render ───────────────────────────────────────────────────────
+    function renderWorkloadResults(report) {
+      document.getElementById("empty-state").style.display = "none";
+      const body = document.getElementById("results-body");
+      body.style.display = "block";
+
+      const stats = report.team_stats || {};
+      let tsStr = "";
+      if (report.scanned_at) {
+        try { tsStr = new Date(report.scanned_at).toLocaleString(); } catch(_) {}
+      }
+
+      body.innerHTML =
+        `<div class="results-head">
+          <div class="results-title">
+            WORKLOAD TRACKER
+            <span class="results-ts">${esc(tsStr)}</span>
+          </div>
+          <button class="btn-pdf" id="btn-pdf" onclick="exportPdf()"
+                  ${reportId ? "" : "disabled"}>\u2b07 Export PDF</button>
+        </div>
+        <div class="summary-row">
+          <div class="scard info">
+            <div class="scard-count">${stats.analyst_count || 0}</div>
+            <div class="scard-label">Analysts</div>
+          </div>
+          <div class="scard info">
+            <div class="scard-count">${stats.feed_count || 0}</div>
+            <div class="scard-label">Feeds</div>
+          </div>
+          <div class="scard info">
+            <div class="scard-count">${((stats.total_team_points || 0)).toFixed(0)}</div>
+            <div class="scard-label">Total Pts</div>
+          </div>
+          <div class="scard high">
+            <div class="scard-count">${stats.unassigned_count || 0}</div>
+            <div class="scard-label">Unassigned</div>
+          </div>
+        </div>
+        ${report.rell_assessment
+          ? `<details class="rell-block" open>
+               <summary>\u25ce Rell's Assessment</summary>
+               <div class="rell-text">${esc(report.rell_assessment)}</div>
+             </details>`
+          : ""}
+        <div id="wl-teams"></div>`;
+
+      const container = document.getElementById("wl-teams");
+      _renderWlTeam(container, "US DATA ANALYST WORKLOAD", "Kiara & Josefina",
+                    "us_da_summaries", "us_da_team_stats", report);
+      _renderWlTeam(container, "PHILIPPINES DA WORKLOAD", "Auie",
+                    "ph_da_summaries", "ph_da_team_stats", report);
+      _renderWlTeam(container, "DATA QUALITY SPECIALIST WORKLOAD", "",
+                    "dqs_summaries", "dqs_team_stats", report);
+    }
+
+    function _renderWlTeam(container, title, subtitle, summariesKey, statsKey, report) {
+      const summaries = report[summariesKey] || {};
+      const stats     = report[statsKey]     || {};
+      const entries   = Object.entries(summaries);
+      if (!entries.length) return;
+
+      const active = entries.filter(([,s]) => !s.display_tag)
+                            .sort((a, b) => b[1].total_points - a[1].total_points);
+      const tagged = entries.filter(([,s]) =>  s.display_tag)
+                            .sort((a, b) => b[1].total_points - a[1].total_points);
+
+      const STATUS = {
+        OVERLOADED:  { cls: "crit", label: "OVR" },
+        BALANCED:    { cls: "low",  label: "OK " },
+        UNDERLOADED: { cls: "med",  label: "LOW" },
+        UNKNOWN:     { cls: "info", label: "???" },
+      };
+
+      function activeRow([name, s]) {
+        const cfg = STATUS[s.load_status] || STATUS.UNKNOWN;
+        const dev = s.deviation_from_avg_pct;
+        const devStr = (dev === null || dev === undefined)
+          ? "n/a"
+          : (dev >= 0 ? `+${dev.toFixed(1)}%` : `${dev.toFixed(1)}%`);
+        return `<tr>
+          <td><span class="wl-badge wl-${cfg.cls}">${cfg.label}</span></td>
+          <td class="wl-name">${esc(name)}</td>
+          <td><strong>${s.total_points.toFixed(2)}</strong></td>
+          <td>${(s.primary_points || 0).toFixed(2)}</td>
+          <td>${(s.backup_points  || 0).toFixed(2)}</td>
+          <td>${s.feed_count}</td>
+          <td class="wl-dev-${cfg.cls}">${devStr}</td>
+        </tr>`;
+      }
+
+      function taggedRow([name, s]) {
+        return `<tr class="wl-tagged-row">
+          <td><span class="wl-badge wl-note">--</span></td>
+          <td class="wl-name">${esc(name)}</td>
+          <td>${s.total_points.toFixed(2)}</td>
+          <td>${(s.primary_points || 0).toFixed(2)}</td>
+          <td>${(s.backup_points  || 0).toFixed(2)}</td>
+          <td>${s.feed_count}</td>
+          <td><span class="wl-tag-pill">${esc(s.display_tag)}</span></td>
+        </tr>`;
+      }
+
+      const tagBlock = tagged.length
+        ? `<tr class="wl-sep-row"><td colspan="7"><div class="wl-sep-line"></div></td></tr>`
+          + tagged.map(taggedRow).join("")
+        : "";
+
+      const el = document.createElement("div");
+      el.className = "wl-team-block";
+      el.innerHTML =
+        `<div class="wl-team-header">
+          <span class="wl-team-title">${esc(title)}</span>
+          ${subtitle ? `<span class="wl-team-sub">${esc(subtitle)}</span>` : ""}
+        </div>
+        <div class="wl-team-stats">
+          <span>${stats.analyst_count || active.length} active</span>
+          <span class="wl-dot">\u00b7</span>
+          <span>${stats.feed_count || 0} feeds</span>
+          <span class="wl-dot">\u00b7</span>
+          <span>${(stats.total_team_points || 0).toFixed(2)} pts</span>
+          <span class="wl-dot">\u00b7</span>
+          <span>${(stats.average_points_per_analyst || 0).toFixed(2)} avg/analyst</span>
+        </div>
+        <table class="wl-table">
+          <thead><tr>
+            <th>Load</th><th>Analyst</th><th>Total</th>
+            <th>Primary</th><th>Backup</th><th>Feeds</th><th>vs Avg</th>
+          </tr></thead>
+          <tbody>
+            ${active.map(activeRow).join("")}
+            ${tagBlock}
+          </tbody>
+        </table>`;
+      container.appendChild(el);
+    }
+
+    // ── Render compliance results ─────────────────────────────────────────────
     function renderResults(report, profileId) {
       document.getElementById("empty-state").style.display  = "none";
       const body = document.getElementById("results-body");

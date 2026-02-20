@@ -66,8 +66,12 @@ async def list_profiles():
     for p in sorted(run_audit.PROFILES_DIR.rglob("*.json")):
         try:
             data = json.loads(p.read_text(encoding="utf-8"))
+            p_type = data.get("type", "compliance")
+            if p_type == "internal":
+                continue   # housekeeping profiles — not shown in the UI
             profiles.append({
                 "id":           data.get("profile_id", p.stem),
+                "type":         p_type,
                 "standard":     data.get("standard", ""),
                 "jurisdiction": data.get("jurisdiction", ""),
                 "obligations":  len(data.get("obligations", [])),
@@ -98,6 +102,56 @@ class AuditRequest(BaseModel):
     profile_id: str
     llm_provider: Optional[str] = None
     llm_model: Optional[str] = None
+
+
+class WorkloadRequest(BaseModel):
+    filename: Optional[str] = None   # specific filename in intake, or None = auto-detect
+
+
+@app.post("/api/workload/run")
+async def run_workload_endpoint(req: WorkloadRequest):
+    """
+    Run a workload scan against a Workload Tracker .xlsx in the intake folder.
+    If filename is omitted the most-recently-uploaded workload file is used.
+    """
+    from workload_engine import WorkloadAuditEngine
+
+    # Locate the workbook
+    intake = run_audit.EXCEL_INTAKE
+    if req.filename:
+        workbook_path = intake / req.filename
+        if not workbook_path.exists():
+            raise HTTPException(status_code=404, detail=f"File '{req.filename}' not found in intake folder.")
+    else:
+        candidates = sorted(
+            list(intake.glob("*.xlsx")) + list(intake.glob("*.csv")),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        if not candidates:
+            raise HTTPException(status_code=404, detail="No workbook files found in intake folder. Upload one first.")
+        workbook_path = candidates[0]
+
+    scoring_config = run_audit.SCORING_CONFIG
+    reports_path   = run_audit.FLATFILE_REPORTS
+
+    engine = WorkloadAuditEngine(
+        scoring_config_path=str(scoring_config) if scoring_config.exists() else None,
+        reports_path=str(reports_path),
+    )
+
+    loop = asyncio.get_event_loop()
+    try:
+        report = await loop.run_in_executor(
+            None,
+            lambda: engine.scan_workbook(str(workbook_path)),
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Workload scan error: {exc}")
+
+    report_id = str(uuid.uuid4())
+    _reports[report_id] = report
+    return {"report_id": report_id, "report": report}
 
 
 @app.post("/api/audit/run")

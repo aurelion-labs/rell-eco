@@ -366,22 +366,57 @@ def cmd_scan_workload(
     print()
     print(report.get("rell_assessment", ""))
     print()
-    stats    = report.get("team_stats", {})
+    stats     = report.get("team_stats", {})
     summaries = report.get("analyst_summaries", {})
+    us_da_summaries = report.get("us_da_summaries", {})
+    ph_da_summaries = report.get("ph_da_summaries", {})
+    dqs_summaries   = report.get("dqs_summaries",   {})
+    us_da_stats = report.get("us_da_team_stats", {})
+    ph_da_stats = report.get("ph_da_team_stats", {})
+    dqs_stats   = report.get("dqs_team_stats",   {})
+
+    def _print_table(group_summaries: dict, group_stats: dict, title: str) -> None:
+        if not group_summaries:
+            return
+        print(f"\n{title}")
+        print(f"  Analysts : {group_stats.get('analyst_count', len(group_summaries))}")
+        print(f"  Feeds    : {group_stats.get('feed_count', 0)}")
+        print(f"  Total pts: {group_stats.get('total_team_points', 0):.2f}")
+        print(f"  Avg/analyst: {group_stats.get('average_points_per_analyst', 0):.2f}")
+        print()
+        print("  %-5s %-25s %7s  %8s  %7s  %6s  %s" % ('', 'Analyst', 'Total', 'Primary', 'Backup', 'Feeds', 'Dev vs Team Avg'))
+        print("  " + "-" * 78)
+        active = {k: v for k, v in group_summaries.items() if not v.get("display_tag")}
+        noted  = {k: v for k, v in group_summaries.items() if v.get("display_tag")}
+        for analyst, s in sorted(active.items(), key=lambda x: -x[1]["total_points"]):
+            status = s.get("load_status", "UNKNOWN")
+            lbl = {"OVERLOADED": "[!!!]", "UNDERLOADED": "[.  ]", "BALANCED": "[ + ]"}.get(status, "    ")
+            dev = s.get("deviation_from_avg_pct", 0)
+            dev_str = "+%.1f%%" % dev if dev >= 0 else "%.1f%%" % dev
+            primary = s.get("primary_points", s.get("total_points", 0))
+            backup  = s.get("backup_points", 0)
+            print("  %-5s %-25s %7.2f  %8.2f  %7.2f  %6d  %s" % (
+                lbl, analyst, s["total_points"], primary, backup, s["feed_count"], dev_str
+            ))
+        if noted:
+            print("  " + "·" * 78)
+            for analyst, s in sorted(noted.items(), key=lambda x: -x[1]["total_points"]):
+                primary = s.get("primary_points", s.get("total_points", 0))
+                backup  = s.get("backup_points", 0)
+                tag = "[%s]" % s.get("display_tag", "note")
+                print("  %-5s %-25s %7.2f  %8.2f  %7.2f  %6d  %s" % (
+                    " -- ", analyst, s["total_points"], primary, backup, s["feed_count"], tag
+                ))
+
     print(f"Feeds scored    : {stats.get('feed_count', 0)}")
     print(f"Analysts        : {stats.get('analyst_count', 0)}")
-    print(f"Team total pts  : {stats.get('total_team_points', 0):.2f}")
-    print(f"Avg per analyst : {stats.get('average_points_per_analyst', 0):.2f}\n")
-    print(f"  {'':5} {'Analyst':<25} {'Total':>7}  {'Primary':>8}  {'Backup':>7}  {'Feeds':>6}  Dev vs Avg")
-    print("  " + "-" * 75)
-    for analyst, s in sorted(summaries.items(), key=lambda x: -x[1]["total_points"]):
-        status = s.get("load_status", "UNKNOWN")
-        lbl = {"OVERLOADED": "[!!!]", "UNDERLOADED": "[.  ]", "BALANCED": "[ + ]"}.get(status, "    ")
-        dev = s.get("deviation_from_avg_pct", 0)
-        dev_str = f"+{dev:.1f}%" if dev >= 0 else f"{dev:.1f}%"
-        primary = s.get("primary_points", s.get("total_points", 0))
-        backup  = s.get("backup_points", 0)
-        print(f"  {lbl} {analyst:<25} {s['total_points']:7.2f}  {primary:8.2f}  {backup:7.2f}  {s['feed_count']:6}  {dev_str}")
+    us_n  = us_da_stats.get('analyst_count', len(us_da_summaries))
+    ph_n  = ph_da_stats.get('analyst_count', len(ph_da_summaries))
+    dqs_n = dqs_stats.get('analyst_count', len(dqs_summaries))
+    print(f"  (US DA: {us_n}  |  PH DA: {ph_n}  |  DQS: {dqs_n})")
+    _print_table(us_da_summaries, us_da_stats, "=" * 60 + "\n  US DATA ANALYST WORKLOAD  (Kiara & Josefina)\n" + "=" * 60)
+    _print_table(ph_da_summaries, ph_da_stats, "=" * 60 + "\n  PHILIPPINES DATA ANALYST WORKLOAD  (Auie)\n" + "=" * 60)
+    _print_table(dqs_summaries,   dqs_stats,   "=" * 60 + "\n  DATA QUALITY SPECIALIST WORKLOAD\n" + "=" * 60)
     output_files = report.get("output_files", {})
     if output_files:
         print("\nReports written:")
