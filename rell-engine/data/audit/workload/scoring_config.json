@@ -1,0 +1,24 @@
+{
+  "_comment": "Scoring formula weights. volume_weight=0 disables raw-record-volume scoring until accurate volume data is available. base_feed_points gives every assigned feed a baseline score. sheet_type_multipliers boost or discount feeds by source sheet (LeadList courts are more complex; State_SME is territory reference only).",
+  "volume_unit": 1000000,
+  "volume_weight": 0.0,
+  "base_feed_points": 1.0,
+  "sheet_type_multipliers": {
+    "LeadList-Master": 2.0,
+    "State_SME": 0.5
+  },
+  "ll_role_weight": 3.0,
+  "dqs_role_weight": 1.0,
+  "backup_role_weight": 0.5,
+  "time_weight": 0.5,
+  "difficulty_weight": 0.5,
+  "deviation_alert_pct": 20,
+  "use_excel_score": false,
+  "recalculate_for_validation": false,
+  "frequency_defaults": {
+    "unknown": 1.0
+  },
+  "overload_threshold_pct": 25,
+  "underload_threshold_pct": 25,
+  "max_recommended_points": 40.0
+}

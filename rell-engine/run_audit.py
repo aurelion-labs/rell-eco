@@ -372,12 +372,16 @@ def cmd_scan_workload(
     print(f"Analysts        : {stats.get('analyst_count', 0)}")
     print(f"Team total pts  : {stats.get('total_team_points', 0):.2f}")
     print(f"Avg per analyst : {stats.get('average_points_per_analyst', 0):.2f}\n")
+    print(f"  {'':5} {'Analyst':<25} {'Total':>7}  {'Primary':>8}  {'Backup':>7}  {'Feeds':>6}  Dev vs Avg")
+    print("  " + "-" * 75)
     for analyst, s in sorted(summaries.items(), key=lambda x: -x[1]["total_points"]):
         status = s.get("load_status", "UNKNOWN")
         lbl = {"OVERLOADED": "[!!!]", "UNDERLOADED": "[.  ]", "BALANCED": "[ + ]"}.get(status, "    ")
         dev = s.get("deviation_from_avg_pct", 0)
         dev_str = f"+{dev:.1f}%" if dev >= 0 else f"{dev:.1f}%"
-        print(f"  {lbl} {analyst:<16} {s['total_points']:6.2f} pts  {s['feed_count']:3} feeds  ({dev_str} vs avg)")
+        primary = s.get("primary_points", s.get("total_points", 0))
+        backup  = s.get("backup_points", 0)
+        print(f"  {lbl} {analyst:<25} {s['total_points']:7.2f}  {primary:8.2f}  {backup:7.2f}  {s['feed_count']:6}  {dev_str}")
     output_files = report.get("output_files", {})
     if output_files:
         print("\nReports written:")

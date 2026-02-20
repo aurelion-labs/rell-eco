@@ -1,0 +1,814 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Rell — Autonomous Audit Engine</title>
+  <style>
+    /* ── Reset ─────────────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* ── Design tokens ──────────────────────────────────────────────────── */
+    :root {
+      --bg:          #0d1117;
+      --surface:     #161b22;
+      --surface2:    #21262d;
+      --border:      #30363d;
+      --text:        #e6edf3;
+      --muted:       #8b949e;
+      --accent:      #58a6ff;
+
+      --crit:        #ff4444;
+      --crit-bg:     #1a0000;
+      --crit-border: #550000;
+      --high:        #ff8c00;
+      --high-bg:     #1a0d00;
+      --high-border: #663300;
+      --med:         #e3b341;
+      --med-bg:      #1a1400;
+      --med-border:  #664e00;
+      --low:         #3fb950;
+      --low-bg:      #001a06;
+      --low-border:  #1a4d22;
+      --info:        #8b949e;
+      --info-bg:     #111518;
+      --info-border: #2a3038;
+    }
+
+    /* ── Base ───────────────────────────────────────────────────────────── */
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    /* ── Header ─────────────────────────────────────────────────────────── */
+    .header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 28px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-shrink: 0;
+    }
+    .header-logo {
+      font-family: "Courier New", Courier, monospace;
+      font-size: 26px;
+      font-weight: 700;
+      letter-spacing: 5px;
+      color: var(--text);
+    }
+    .header-sep { color: var(--border); font-size: 20px; }
+    .header-tagline {
+      color: var(--muted);
+      font-size: 13px;
+      letter-spacing: 0.3px;
+    }
+    .header-version {
+      margin-left: auto;
+      font-family: monospace;
+      font-size: 11px;
+      color: var(--muted);
+      background: var(--surface2);
+      padding: 3px 10px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+    }
+
+    /* ── Layout ─────────────────────────────────────────────────────────── */
+    .layout {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+      min-height: 0;
+    }
+
+    /* ── Control Panel ──────────────────────────────────────────────────── */
+    .controls {
+      width: 300px;
+      min-width: 260px;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      padding: 24px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 22px;
+      overflow-y: auto;
+      flex-shrink: 0;
+    }
+
+    .ctrl-label {
+      display: block;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 8px;
+    }
+    .ctrl-sublabel {
+      font-size: 11px;
+      font-weight: 400;
+      color: var(--muted);
+      text-transform: none;
+      letter-spacing: 0;
+      opacity: 0.6;
+      margin-left: 4px;
+    }
+
+    select {
+      width: 100%;
+      background: var(--surface2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 10px;
+      font-size: 13px;
+      cursor: pointer;
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%238b949e' d='M1 1l5 5 5-5'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 10px center;
+      padding-right: 28px;
+    }
+    select:focus { outline: none; border-color: var(--accent); }
+
+    /* Upload zone */
+    .upload-zone {
+      border: 2px dashed var(--border);
+      border-radius: 6px;
+      padding: 18px 14px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+      position: relative;
+    }
+    .upload-zone:hover, .upload-zone.drag-over {
+      border-color: var(--accent);
+      background: rgba(88, 166, 255, 0.06);
+    }
+    .upload-zone input[type="file"] { display: none; }
+    .upload-icon { font-size: 22px; color: var(--muted); margin-bottom: 5px; }
+    .upload-text { font-size: 12px; color: var(--muted); }
+    .upload-hint { font-size: 11px; color: var(--muted); margin-top: 3px; opacity: 0.6; }
+
+    .file-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      margin-top: 8px;
+    }
+    .file-tag {
+      font-size: 11px;
+      font-family: monospace;
+      background: rgba(88, 166, 255, 0.1);
+      color: var(--accent);
+      border: 1px solid rgba(88, 166, 255, 0.25);
+      border-radius: 4px;
+      padding: 2px 7px;
+    }
+
+    /* LLM toggle */
+    .llm-row {
+      display: flex;
+      gap: 8px;
+    }
+    .llm-opt {
+      flex: 1;
+      padding: 7px 4px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--surface2);
+      color: var(--muted);
+      font-size: 12px;
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.15s;
+      user-select: none;
+    }
+    .llm-opt:hover { border-color: var(--accent); color: var(--text); }
+    .llm-opt.active {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: rgba(88, 166, 255, 0.1);
+    }
+
+    /* Run button */
+    .btn-run {
+      width: 100%;
+      padding: 11px;
+      background: var(--accent);
+      color: #0d1117;
+      font-size: 14px;
+      font-weight: 600;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: opacity 0.15s;
+    }
+    .btn-run:hover:not(:disabled) { opacity: 0.87; }
+    .btn-run:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    .spin {
+      width: 14px; height: 14px;
+      border: 2px solid rgba(13,17,23,0.25);
+      border-top-color: #0d1117;
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+      display: none;
+    }
+    .btn-run.loading .spin { display: block; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .status-msg {
+      font-size: 12px;
+      color: var(--muted);
+      text-align: center;
+      min-height: 16px;
+    }
+
+    /* ── Results Panel ───────────────────────────────────────────────────── */
+    .results {
+      flex: 1;
+      overflow-y: auto;
+      padding: 28px 32px;
+    }
+
+    /* Empty state */
+    .empty {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      color: var(--muted);
+    }
+    .empty-icon  { font-size: 44px; opacity: 0.25; }
+    .empty-title { font-size: 16px; }
+    .empty-sub   { font-size: 13px; opacity: 0.65; }
+
+    /* Results header */
+    .results-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+    .results-title {
+      font-family: "Courier New", monospace;
+      font-size: 15px;
+      color: var(--muted);
+    }
+    .results-title strong { color: var(--text); }
+    .results-ts {
+      font-size: 12px;
+      color: var(--muted);
+      margin-left: 10px;
+      opacity: 0.6;
+      font-family: sans-serif;
+    }
+
+    /* PDF button */
+    .btn-pdf {
+      padding: 7px 16px;
+      background: transparent;
+      color: var(--accent);
+      border: 1px solid rgba(88, 166, 255, 0.45);
+      border-radius: 6px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.15s;
+      white-space: nowrap;
+    }
+    .btn-pdf:hover:not(:disabled) { background: rgba(88, 166, 255, 0.1); }
+    .btn-pdf:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* Summary cards */
+    .summary-row {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 22px;
+      flex-wrap: wrap;
+    }
+    .scard {
+      flex: 1;
+      min-width: 90px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 14px;
+      text-align: center;
+    }
+    .scard-count {
+      font-size: 30px;
+      font-weight: 700;
+      font-family: "Courier New", monospace;
+      line-height: 1.1;
+    }
+    .scard-label {
+      font-size: 11px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      margin-top: 3px;
+    }
+    .scard.crit .scard-count { color: var(--crit); }
+    .scard.high .scard-count { color: var(--high); }
+    .scard.med  .scard-count { color: var(--med);  }
+    .scard.info .scard-count { color: var(--info); }
+
+    /* Rell assessment collapse */
+    .rell-block {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      border-radius: 6px;
+      margin-bottom: 22px;
+      overflow: hidden;
+    }
+    .rell-block summary {
+      padding: 11px 14px;
+      cursor: pointer;
+      font-size: 13px;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      user-select: none;
+      list-style: none;
+    }
+    .rell-block summary::-webkit-details-marker { display: none; }
+    .rell-block summary:hover { color: var(--text); }
+    .rell-block[open] summary { border-bottom: 1px solid var(--border); }
+    .rell-text {
+      padding: 14px 16px;
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.7;
+      white-space: pre-wrap;
+    }
+
+    /* Findings */
+    .findings-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 10px;
+    }
+
+    .finding {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      margin-bottom: 8px;
+      overflow: hidden;
+    }
+    .finding.sev-critical { border-left: 3px solid var(--crit); }
+    .finding.sev-high     { border-left: 3px solid var(--high); }
+    .finding.sev-medium   { border-left: 3px solid var(--med); }
+    .finding.sev-low      { border-left: 3px solid var(--low); }
+    .finding.sev-info     { border-left: 3px solid var(--info-border); }
+
+    .finding-head {
+      padding: 11px 14px 7px;
+      display: flex;
+      align-items: baseline;
+      gap: 9px;
+      flex-wrap: wrap;
+    }
+    .sev-badge {
+      font-size: 10px;
+      font-weight: 700;
+      font-family: monospace;
+      padding: 2px 7px;
+      border-radius: 3px;
+      letter-spacing: 0.3px;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .sev-badge.sev-critical { background: var(--crit-bg);  color: var(--crit);  border: 1px solid var(--crit-border); }
+    .sev-badge.sev-high     { background: var(--high-bg);  color: var(--high);  border: 1px solid var(--high-border); }
+    .sev-badge.sev-medium   { background: var(--med-bg);   color: var(--med);   border: 1px solid var(--med-border);  }
+    .sev-badge.sev-low      { background: var(--low-bg);   color: var(--low);   border: 1px solid var(--low-border);  }
+    .sev-badge.sev-info     { background: var(--info-bg);  color: var(--info);  border: 1px solid var(--info-border); }
+
+    .finding-article {
+      font-family: monospace;
+      font-size: 11px;
+      color: var(--muted);
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .finding-title {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text);
+      flex: 1;
+    }
+    .finding-body { padding: 0 14px 11px; }
+    .finding-obs {
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.55;
+      margin-bottom: 7px;
+    }
+    .fix-toggle {
+      font-size: 12px;
+      color: var(--accent);
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 0;
+      text-decoration: none;
+      opacity: 0.8;
+      transition: opacity 0.1s;
+    }
+    .fix-toggle:hover { opacity: 1; }
+    .fix-content {
+      display: none;
+      margin-top: 7px;
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.55;
+      border-left: 2px solid var(--border);
+      padding-left: 10px;
+    }
+    .fix-content.open { display: block; }
+
+    /* Error banner */
+    .err-banner {
+      background: var(--crit-bg);
+      border: 1px solid var(--crit-border);
+      color: var(--crit);
+      padding: 12px 16px;
+      border-radius: 6px;
+      font-size: 13px;
+      margin-bottom: 16px;
+    }
+
+    /* ── Responsive ─────────────────────────────────────────────────────── */
+    @media (max-width: 720px) {
+      .layout { flex-direction: column; }
+      .controls {
+        width: 100%;
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+        overflow-y: visible;
+      }
+      .results { padding: 20px 16px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ── Header ─────────────────────────────────────────────────────────── -->
+  <header class="header">
+    <div class="header-logo">RELL</div>
+    <div class="header-sep">|</div>
+    <div class="header-tagline">Autonomous Audit Engine</div>
+    <div class="header-version">v0.1.0</div>
+  </header>
+
+  <div class="layout">
+
+    <!-- ── Control Panel ──────────────────────────────────────────────────── -->
+    <aside class="controls">
+
+      <!-- Profile selector -->
+      <div>
+        <label class="ctrl-label" for="profile-sel">Compliance Profile</label>
+        <select id="profile-sel">
+          <option value="">Loading profiles…</option>
+        </select>
+      </div>
+
+      <!-- File upload -->
+      <div>
+        <label class="ctrl-label">
+          Data File
+          <span class="ctrl-sublabel">(optional)</span>
+        </label>
+        <div class="upload-zone" id="upload-zone" title="Click or drag a file here">
+          <input type="file" id="file-input" accept=".txt,.xlsx,.csv" />
+          <div class="upload-icon">⬆</div>
+          <div class="upload-text">Click or drag to upload</div>
+          <div class="upload-hint">.txt · .xlsx · .csv</div>
+        </div>
+        <div class="file-list" id="file-list"></div>
+      </div>
+
+      <!-- LLM mode -->
+      <div>
+        <label class="ctrl-label">LLM Mode</label>
+        <div class="llm-row">
+          <div class="llm-opt active" data-llm="">None</div>
+          <div class="llm-opt" data-llm="ollama">Ollama</div>
+        </div>
+      </div>
+
+      <!-- Run button -->
+      <button class="btn-run" id="btn-run" onclick="runAudit()">
+        <div class="spin" id="spin"></div>
+        <span id="btn-label">Run Audit</span>
+      </button>
+
+      <div class="status-msg" id="status-msg"></div>
+
+    </aside>
+
+    <!-- ── Results Panel ───────────────────────────────────────────────────── -->
+    <main class="results" id="results-panel">
+
+      <div class="empty" id="empty-state">
+        <div class="empty-icon">◎</div>
+        <div class="empty-title">No audit results yet</div>
+        <div class="empty-sub">Select a profile and click Run Audit</div>
+      </div>
+
+      <div id="results-body" style="display:none;"></div>
+
+    </main>
+
+  </div>
+
+  <script>
+    // ── State ────────────────────────────────────────────────────────────────
+    let reportId   = null;
+    let selectedLlm = "";
+
+    // ── Boot ─────────────────────────────────────────────────────────────────
+    document.addEventListener("DOMContentLoaded", () => {
+      fetchProfiles();
+      initUpload();
+      initLlm();
+    });
+
+    // ── Profiles ─────────────────────────────────────────────────────────────
+    async function fetchProfiles() {
+      const sel = document.getElementById("profile-sel");
+      try {
+        const data = await apiFetch("/api/profiles");
+        sel.innerHTML = '<option value="">— Select a profile —</option>';
+        data.profiles.forEach(p => {
+          const o = document.createElement("option");
+          o.value = p.id;
+          o.textContent = `${p.id}  (${p.obligations} checks)  ·  ${p.jurisdiction}`;
+          sel.appendChild(o);
+        });
+      } catch (e) {
+        sel.innerHTML = `<option value="">Error: ${e.message}</option>`;
+      }
+    }
+
+    // ── LLM toggle ───────────────────────────────────────────────────────────
+    function initLlm() {
+      document.querySelectorAll(".llm-opt").forEach(el => {
+        el.addEventListener("click", () => {
+          document.querySelectorAll(".llm-opt").forEach(e => e.classList.remove("active"));
+          el.classList.add("active");
+          selectedLlm = el.dataset.llm;
+        });
+      });
+    }
+
+    // ── File upload ──────────────────────────────────────────────────────────
+    function initUpload() {
+      const zone  = document.getElementById("upload-zone");
+      const input = document.getElementById("file-input");
+
+      zone.addEventListener("click",      () => input.click());
+      zone.addEventListener("dragover",   e => { e.preventDefault(); zone.classList.add("drag-over"); });
+      zone.addEventListener("dragleave",  ()  => zone.classList.remove("drag-over"));
+      zone.addEventListener("drop",       e  => {
+        e.preventDefault();
+        zone.classList.remove("drag-over");
+        if (e.dataTransfer.files[0]) uploadFile(e.dataTransfer.files[0]);
+      });
+      input.addEventListener("change",    ()  => { if (input.files[0]) uploadFile(input.files[0]); input.value = ""; });
+    }
+
+    async function uploadFile(file) {
+      setStatus("Uploading " + file.name + "…");
+      const form = new FormData();
+      form.append("file", file);
+      try {
+        const data = await apiFetch("/api/upload", { method: "POST", body: form });
+        const tag = document.createElement("span");
+        tag.className = "file-tag";
+        tag.textContent = data.saved;
+        document.getElementById("file-list").appendChild(tag);
+        setStatus("Ready: " + data.saved);
+      } catch (e) {
+        setStatus("Upload error: " + e.message);
+      }
+    }
+
+    // ── Run audit ────────────────────────────────────────────────────────────
+    async function runAudit() {
+      const profileId = document.getElementById("profile-sel").value;
+      if (!profileId) { setStatus("Select a profile first."); return; }
+
+      const btn  = document.getElementById("btn-run");
+      const spin = document.getElementById("spin");
+      const lbl  = document.getElementById("btn-label");
+
+      btn.disabled = true;
+      spin.style.display = "block";
+      btn.classList.add("loading");
+      lbl.textContent = "Running…";
+      setStatus("Rell is reviewing…");
+
+      try {
+        const data = await apiFetch("/api/audit/run", {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({
+            profile_id:   profileId,
+            llm_provider: selectedLlm || null,
+          }),
+        });
+        reportId = data.report_id;
+        renderResults(data.report, profileId);
+        const total = data.report?.summary?.total_findings ?? 0;
+        setStatus("Complete — " + total + " finding" + (total === 1 ? "" : "s"));
+      } catch (e) {
+        renderError(e.message);
+        setStatus("Audit failed.");
+      } finally {
+        btn.disabled = false;
+        spin.style.display = "none";
+        btn.classList.remove("loading");
+        lbl.textContent = "Run Audit";
+      }
+    }
+
+    // ── Render results ────────────────────────────────────────────────────────
+    function renderResults(report, profileId) {
+      document.getElementById("empty-state").style.display  = "none";
+      const body = document.getElementById("results-body");
+      body.style.display = "block";
+
+      const summary = report.summary     || {};
+      const bySev   = summary.by_severity || {};
+      const findings = report.findings   || [];
+      const crit = bySev.CRITICAL || 0;
+      const high = bySev.HIGH     || 0;
+      const med  = bySev.MEDIUM   || 0;
+      const info = (bySev.INFO || 0) + (bySev.LOW || 0);
+
+      let tsStr = "";
+      if (report.timestamp) {
+        try { tsStr = new Date(report.timestamp).toLocaleString(); } catch (_) {}
+      }
+
+      body.innerHTML =
+        `<div class="results-head">
+          <div class="results-title">
+            AUDIT · <strong>${esc(profileId.toUpperCase())}</strong>
+            <span class="results-ts">${esc(tsStr)}</span>
+          </div>
+          <button class="btn-pdf" id="btn-pdf" onclick="exportPdf()"
+                  ${reportId ? "" : "disabled"}>⬇ Export PDF</button>
+        </div>
+
+        <div class="summary-row">
+          <div class="scard crit">
+            <div class="scard-count">${crit}</div>
+            <div class="scard-label">Critical</div>
+          </div>
+          <div class="scard high">
+            <div class="scard-count">${high}</div>
+            <div class="scard-label">High</div>
+          </div>
+          <div class="scard med">
+            <div class="scard-count">${med}</div>
+            <div class="scard-label">Medium</div>
+          </div>
+          <div class="scard info">
+            <div class="scard-count">${info}</div>
+            <div class="scard-label">Info</div>
+          </div>
+        </div>
+
+        ${report.rell_opening ? `
+        <details class="rell-block" open>
+          <summary>◎ Rell's Assessment</summary>
+          <div class="rell-text">${esc(report.rell_opening)}</div>
+        </details>` : ""}
+
+        <div class="findings-label">Findings (${findings.length})</div>
+        <div id="findings-list">
+          ${findings.length
+            ? findings.map(renderFinding).join("")
+            : `<div style="font-size:13px;color:var(--muted);padding:8px 0;">
+                 No inconsistencies detected.
+               </div>`}
+        </div>`;
+    }
+
+    function renderFinding(f) {
+      const sev    = (f.severity || "INFO").toLowerCase();
+      const sevUp  = (f.severity || "INFO").toUpperCase();
+      const art    = f.article ? `<span class="finding-article">${esc(f.article)}</span>` : "";
+      const hasFix = f.suggested_fix &&
+                     f.suggested_fix !== "Under investigation." &&
+                     f.suggested_fix !== "Review obligation against current data practices.";
+      return `
+        <div class="finding sev-${sev}">
+          <div class="finding-head">
+            <span class="sev-badge sev-${sev}">${sevUp}</span>
+            ${art}
+            <span class="finding-title">${esc(f.title || "Finding")}</span>
+          </div>
+          <div class="finding-body">
+            ${f.observation
+              ? `<div class="finding-obs">${esc(f.observation)}</div>` : ""}
+            ${hasFix
+              ? `<button class="fix-toggle" onclick="toggleFix(this)">▶ Suggested Fix</button>
+                 <div class="fix-content">${esc(f.suggested_fix)}</div>`
+              : ""}
+          </div>
+        </div>`;
+    }
+
+    function toggleFix(btn) {
+      const c = btn.nextElementSibling;
+      const open = c.classList.toggle("open");
+      btn.textContent = open ? "▼ Suggested Fix" : "▶ Suggested Fix";
+    }
+
+    function renderError(msg) {
+      document.getElementById("empty-state").style.display = "none";
+      const body = document.getElementById("results-body");
+      body.style.display = "block";
+      body.innerHTML = `<div class="err-banner">⚠ Audit error — ${esc(msg)}</div>`;
+    }
+
+    // ── Export PDF ────────────────────────────────────────────────────────────
+    async function exportPdf() {
+      if (!reportId) return;
+      const btn = document.getElementById("btn-pdf");
+      btn.disabled = true;
+      btn.textContent = "⏳ Generating…";
+      try {
+        const res = await fetch(`/api/report/${reportId}/pdf`);
+        if (!res.ok) {
+          const e = await res.json().catch(() => ({ detail: res.statusText }));
+          throw new Error(e.detail || "PDF generation failed");
+        }
+        const blob = await res.blob();
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement("a");
+        a.href     = url;
+        a.download = `rell_audit_${reportId.slice(0, 8)}.pdf`;
+        a.click();
+        URL.revokeObjectURL(url);
+        setStatus("PDF downloaded.");
+      } catch (e) {
+        setStatus("PDF error: " + e.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "⬇ Export PDF";
+      }
+    }
+
+    // ── Utilities ─────────────────────────────────────────────────────────────
+    async function apiFetch(url, opts = {}) {
+      const res = await fetch(url, opts);
+      if (!res.ok) {
+        let detail = res.statusText;
+        try { detail = (await res.json()).detail || detail; } catch (_) {}
+        throw new Error(detail);
+      }
+      return res.json();
+    }
+
+    function setStatus(msg) {
+      document.getElementById("status-msg").textContent = msg;
+    }
+
+    function esc(s) {
+      return String(s || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+  </script>
+</body>
+</html>

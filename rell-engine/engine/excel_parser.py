@@ -140,6 +140,83 @@ _FIELD_ALIASES: Dict[str, str] = {
     "load": "workload_points",
     "loadpoints": "workload_points",
 
+    # DA / analyst responsible — all common variations used in workload trackers
+    "da_responsible":              "assignee",
+    "daresponsible":               "assignee",
+    "da_responsible_person":       "assignee",
+    "state_sme":                   "assignee",
+    "statesme":                    "assignee",
+    "sme":                         "assignee",
+    "primary_da":                  "assignee",
+    "primaryda":                   "assignee",
+    "responsible_da":              "assignee",
+    "responsibleda":               "assignee",
+    "da":                          "assignee",
+    "lead":                        "assignee",
+    "responsible":                 "assignee",
+    "responsibility":              "assignee",
+    "assigned_da":                 "assignee",
+    "assignedda":                  "assignee",
+
+    # Analyst / assigned analyst variants
+    "assigned_analyst":            "assignee",
+    "assignedanalyst":             "assignee",
+    "performance_analyst":         "assignee",
+    "performanceanalyst":          "assignee",
+    "acquisition_analyst":         "assignee",
+    "acquisitionanalyst":          "assignee",
+
+    # Lead List Responsibility — separate role key (not the same as DA Responsible).
+    # These entries carry higher workload weight; keeping them distinct prevents
+    # the column-overwrite problem when a row has both LL and DA columns.
+    "lead_list_responsibility":    "ll_assignee",
+    "leadlistresponsibility":      "ll_assignee",
+    "lead_list_da":                "ll_assignee",
+    "leadlistda":                  "ll_assignee",
+    "ll_responsibility":           "ll_assignee",
+    "llresponsibility":            "ll_assignee",
+
+    # DQS Responsible — separate role key
+    "dqs_responsible":             "dqs_assignee",
+    "dqsresponsible":              "dqs_assignee",
+    "dqs":                         "dqs_assignee",
+
+    # Back-up / backup DA — separate role key
+    "back-up_da_responsible":      "backup_assignee",
+    "backup_da_responsible":       "backup_assignee",
+    "backupdaresponsible":         "backup_assignee",
+    "back-updalresponsible":       "backup_assignee",
+    "back-up_da":                  "backup_assignee",
+    "backup_da":                   "backup_assignee",
+    "backup_analyst":              "backup_assignee",
+    "back-up_analyst":             "backup_assignee",
+
+    # Volume — handle multi-line headers like 'Ave Volume \nWeekly/Monthly 2025'
+    "ave_volume_weekly/monthly_2025": "volume",
+    "ave_volume_weekly/monthly_2024": "volume",
+    "ave_volume_weekly/monthly_2023": "volume",
+    "ave_volume_weekly/monthly_2022": "volume",
+    "ave_volume_weekly/monthly":    "volume",
+    "avevolumeweeklymonthly2025":   "volume",
+    "avevolumeweeklymonthly2024":   "volume",
+    "avevolumeweeklymonthly2023":   "volume",
+    "avevolumeweeklymonthly2022":   "volume",
+    "avevolumeweeklymonthly":       "volume",
+    "avevolume":                    "volume",
+    "ave_volume":                   "volume",
+
+    # Time
+    "time_to_complete":            "time_minutes",
+    "timetocomplete":              "time_minutes",
+    "time_per_source":             "time_minutes",
+    "timepersource":               "time_minutes",
+
+    # Type/difficulty combos (e.g. "Type/Difficulty" column)
+    "type_difficulty":             "difficulty",
+    "typedifficulty":              "difficulty",
+    "type_complexity":             "difficulty",
+    "typecomplexity":              "difficulty",
+
     # SOP / notes
     "sop": "sop",
     "sopnotes": "sop",
@@ -175,16 +252,21 @@ _FIELD_ALIASES: Dict[str, str] = {
 
 def normalize_col(name: str) -> str:
     """Normalize a raw column header to a canonical field name."""
-    key = name.lower().strip().replace(" ", "").replace("-", "").replace("_", "").replace("/", "")
+    # Strip whitespace including newlines/tabs that appear in multi-line Excel headers
+    cleaned = name.strip().replace("\n", " ").replace("\r", " ").replace("\t", " ")
+    # Collapse multiple spaces
+    while "  " in cleaned:
+        cleaned = cleaned.replace("  ", " ")
     # Try direct alias with underscores preserved
-    result = _FIELD_ALIASES.get(name.lower().strip().replace(" ", "_"), None)
+    result = _FIELD_ALIASES.get(cleaned.lower().strip().replace(" ", "_"), None)
     if result:
         return result
     # Try alias with all separators stripped
+    key = cleaned.lower().replace(" ", "").replace("-", "").replace("_", "").replace("/", "")
     for alias_key, canonical in _FIELD_ALIASES.items():
         if alias_key.replace("_", "") == key:
             return canonical
-    return name.lower().strip().replace(" ", "_")
+    return cleaned.lower().strip().replace(" ", "_")
 
 
 # ---------------------------------------------------------------------------
@@ -352,6 +434,151 @@ class WorkbookParser:
             return names
         except Exception:
             return []
+
+    # Sheets that look like config/reference tabs — skip during data scanning
+    _SKIP_SHEET_KEYWORDS = (
+        "param", "parameter", "weight", "config", "legend", "key",
+        "readme", "notes", "instructions", "reference", "lookup", "summary",
+        # Court/population reference sheets (not workload data)
+        "nvscourt", "nvscourtpop", "court", "population", "_pop", "-pop",
+        "state-county", "statecounty", "county_pop", "countypop",
+        # Production tracking (not workload assignment)
+        "production",
+    )
+
+    def _is_data_sheet(self, name: str) -> bool:
+        """Return True if the sheet name looks like a data sheet (not a config tab)."""
+        n = name.lower().strip()
+        return not any(kw in n for kw in self._SKIP_SHEET_KEYWORDS)
+
+    def parse_all_sheets(self, skip_non_data: bool = True) -> "WorkbookParser":
+        """
+        Parse every sheet in an .xlsx workbook, merging all rows into
+        a single records list.  Each record gets a ``_sheet`` key with
+        the sheet name so downstream code knows where the row came from.
+
+        Sheets whose names match _SKIP_SHEET_KEYWORDS are skipped when
+        skip_non_data=True (the default).  Force-include every sheet by
+        passing skip_non_data=False.
+
+        Falls back to single-sheet parse for .csv files.
+        """
+        if self.filepath.suffix.lower() not in (".xlsx", ".xlsm"):
+            return self.parse()      # CSV — no multi-sheet
+
+        try:
+            import openpyxl
+        except ImportError:
+            return self.parse()
+
+        wb = openpyxl.load_workbook(self.filepath, data_only=True, read_only=True)
+        sheet_names = wb.sheetnames
+        wb.close()
+
+        sheets_to_parse = [
+            s for s in sheet_names
+            if (not skip_non_data) or self._is_data_sheet(s)
+        ]
+
+        if not sheets_to_parse:
+            # Nothing looks like data — fall back to parsing all sheets
+            sheets_to_parse = sheet_names
+
+        all_records: List[Dict[str, Any]] = []
+        all_raw_headers: List[str] = []
+        for sheet in sheets_to_parse:
+            sub = WorkbookParser(str(self.filepath), sheet_name=sheet)
+            sub.parse()
+            if sub.parse_errors and not sub.records:
+                self.parse_errors.extend(sub.parse_errors)
+                continue
+            for rec in sub.records:
+                rec["_sheet"] = sheet
+            all_records.extend(sub.records)
+            # Collect all unique raw headers across sheets for diagnostics
+            for h in sub.raw_headers:
+                if h not in all_raw_headers:
+                    all_raw_headers.append(h)
+
+        self.records = all_records
+        self.row_count = len(all_records)
+        self.raw_headers = all_raw_headers
+        self.canonical_headers = list({normalize_col(h) for h in all_raw_headers})
+        return self
+
+    def read_params_sheet(self) -> Dict[str, Any]:
+        """
+        Look for a parameters / weights sheet in the workbook and read it
+        as a key→value config dict.
+
+        Expected format (either orientation works):
+            Column A: parameter name  (e.g. "volume_weight", "time_weight")
+            Column B: value           (e.g. 1.0)
+
+        OR a two-row layout:
+            Row 1: parameter names
+            Row 2: values
+
+        Returns an empty dict if no params sheet is found.
+        """
+        if self.filepath.suffix.lower() not in (".xlsx", ".xlsm"):
+            return {}
+        try:
+            import openpyxl
+        except ImportError:
+            return {}
+
+        wb = openpyxl.load_workbook(self.filepath, data_only=True, read_only=True)
+        sheet_names = wb.sheetnames
+
+        _PARAM_KEYWORDS = ("param", "parameter", "weight", "config", "scoring")
+        params_sheet = next(
+            (s for s in sheet_names
+             if any(kw in s.lower() for kw in _PARAM_KEYWORDS)),
+            None,
+        )
+
+        if not params_sheet:
+            wb.close()
+            return {}
+
+        ws = wb[params_sheet]
+        rows = list(ws.iter_rows(values_only=True))
+        wb.close()
+
+        if not rows:
+            return {}
+
+        params: Dict[str, Any] = {}
+
+        # Detect layout: if first cell of row 1 is a string and first cell
+        # of row 2 is a number → two-row header/value layout.
+        if (
+            len(rows) >= 2
+            and isinstance(rows[0][0], str)
+            and rows[1][0] is not None
+            and not isinstance(rows[1][0], str)
+        ):
+            # Two-row layout
+            headers = [str(h).strip() if h else "" for h in rows[0]]
+            values  = rows[1]
+            for h, v in zip(headers, values):
+                if h and v is not None:
+                    key = h.lower().strip().replace(" ", "_")
+                    params[key] = _coerce_value(v)
+        else:
+            # Column A/B layout (most common)
+            for row in rows:
+                if len(row) < 2:
+                    continue
+                k, v = row[0], row[1]
+                if k is None or v is None:
+                    continue
+                key = str(k).lower().strip().replace(" ", "_")
+                if key and key not in ("parameter", "param", "key", "name", "setting"):
+                    params[key] = _coerce_value(v)
+
+        return params
 
     def summary(self) -> Dict[str, Any]:
         return {

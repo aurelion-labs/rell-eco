@@ -1,13 +1,20 @@
 # rell-engine dependencies
-# Core — required for all operation modes
+
+# ── Core — required for all operation modes ────────────────────────────────
 python-dotenv>=1.0.0
 openpyxl>=3.1.0
 sqlalchemy>=2.0.0
 
-# SQL Server support (optional — needed for MSSQL connections)
+# ── Web Dashboard — required for `python run_web.py` ──────────────────────
+fastapi>=0.110.0
+uvicorn>=0.29.0
+python-multipart>=0.0.9   # required for file upload (UploadFile)
+reportlab>=4.1.0          # PDF export
+
+# ── SQL Server support (optional — needed for MSSQL connections) ───────────
 # pip install pyodbc
 # Requires ODBC Driver 17 for SQL Server installed on the host OS
 
-# LLM integration (optional — only needed for --llm enhanced assessments)
+# ── LLM integration (optional — only needed for --llm enhanced assessments)
 openai>=1.0.0
 # anthropic>=0.20.0   # Uncomment for Claude support

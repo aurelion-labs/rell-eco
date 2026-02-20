@@ -135,25 +135,37 @@ class WorkloadScorer:
 
     DEFAULT_CONFIG: Dict[str, Any] = {
         "_comment": (
-            "Edit these weights to tune the scoring formula. "
-            "volume_unit: records per 1 point of volume score (e.g. 1000000 = 1pt per million). "
+            "Scoring formula weights. volume_weight=0 disables raw-record-volume scoring "
+            "until accurate volume data is available. base_feed_points gives every assigned "
+            "feed a baseline score. sheet_type_multipliers boost or discount feeds by source "
+            "sheet (LeadList courts are more complex; State_SME is territory reference only). "
             "time_weight: points per hour of QA time, scaled by frequency. "
-            "difficulty_weight: multiplier on raw difficulty score (1-5 scale). "
-            "deviation_alert_pct: flag if Excel score deviates from calculated by this %. "
+            "difficulty_weight: multiplier on raw difficulty score (1-5 scale)."
         ),
         "volume_unit": 1000000,
-        "volume_weight": 1.0,
+        "volume_weight": 0.0,
+        "base_feed_points": 1.0,
+        "sheet_type_multipliers": {
+            "LeadList-Master": 2.0,
+            "State_SME": 0.5,
+        },
+        # Role weights applied on top of sheet multiplier during role expansion.
+        # ll = Lead List Responsibility (complex), dqs = DQS Responsible,
+        # backup = Back-up DA Responsible.
+        "ll_role_weight":     3.0,
+        "dqs_role_weight":    1.0,
+        "backup_role_weight": 0.5,
         "time_weight": 0.5,
         "difficulty_weight": 0.5,
         "deviation_alert_pct": 20,
-        "use_excel_score": True,
-        "recalculate_for_validation": True,
+        "use_excel_score": False,
+        "recalculate_for_validation": False,
         "frequency_defaults": {
             "unknown": 1.0
         },
         "overload_threshold_pct": 25,
         "underload_threshold_pct": 25,
-        "max_recommended_points": 20.0
+        "max_recommended_points": 40.0,
     }
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
@@ -179,9 +191,16 @@ class WorkloadScorer:
         difficulty = _to_float(record.get("difficulty", 0))
 
         volume_unit = float(self.config.get("volume_unit", 1_000_000))
-        volume_weight = float(self.config.get("volume_weight", 1.0))
+        volume_weight = float(self.config.get("volume_weight", 0.0))
         time_weight = float(self.config.get("time_weight", 0.5))
         difficulty_weight = float(self.config.get("difficulty_weight", 0.5))
+        base_feed_points = float(self.config.get("base_feed_points", 1.0))
+
+        # Sheet-type multiplier — boosts complex sources (LeadList courts) or
+        # discounts reference-only sheets (State_SME territory assignments)
+        sheet = record.get("_sheet", "")
+        sheet_multipliers: Dict[str, float] = self.config.get("sheet_type_multipliers", {})
+        sheet_mult = float(sheet_multipliers.get(sheet, 1.0))
 
         # Monthly equivalents
         monthly_volume = volume * freq_mult
@@ -189,10 +208,14 @@ class WorkloadScorer:
         time_points = (time_minutes / 60.0) * time_weight * freq_mult
         difficulty_points = difficulty * difficulty_weight
 
-        calculated = round(volume_points + time_points + difficulty_points, 4)
+        # Base score per feed (always awarded) + optional volume/time/difficulty
+        subtotal = base_feed_points + volume_points + time_points + difficulty_points
+        calculated = round(subtotal * sheet_mult, 4)
 
         detail = {
             "frequency_multiplier": freq_mult,
+            "base_feed_points": base_feed_points,
+            "sheet_multiplier": sheet_mult,
             "monthly_volume": round(monthly_volume, 0),
             "volume_points": round(volume_points, 4),
             "time_points": round(time_points, 4),
@@ -201,8 +224,8 @@ class WorkloadScorer:
         }
 
         excel_score = _to_float(record.get("workload_points", None))
-        use_excel = self.config.get("use_excel_score", True)
-        validate = self.config.get("recalculate_for_validation", True)
+        use_excel = self.config.get("use_excel_score", False)
+        validate = self.config.get("recalculate_for_validation", False)
         deviation_pct = float(self.config.get("deviation_alert_pct", 20))
 
         validation_warning = None
@@ -257,6 +280,52 @@ class WorkloadAnalyzer:
             self.config.get("max_recommended_points", 20.0)
         )
 
+    # ------------------------------------------------------------------
+    # Name normalization
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _build_name_map(names: List[str]) -> Dict[str, str]:
+        """
+        Build a mapping of abbreviated/variant names to canonical full names.
+
+        Strategy: group names by (first_word, last_initial). Within each
+        group, use the longest name as canonical. All shorter variants map
+        to it.
+
+        Examples:
+            "Hoang N"      -> "Hoang Nguyen"
+            "Colin M"      -> "Colin Maxwell"
+            "Chase K"      -> "Chase Key"
+
+        Single-word names or names with no matching longer version are kept
+        as-is.
+        """
+        from collections import defaultdict
+
+        # Build index: (first_lower, last_initial_lower) -> list of names
+        groups: Dict[tuple, List[str]] = defaultdict(list)
+        for name in names:
+            parts = name.strip().split()
+            if not parts:
+                continue
+            first = parts[0].lower()
+            last_initial = parts[-1][0].lower() if len(parts) > 1 else ""
+            groups[(first, last_initial)].append(name)
+
+        name_map: Dict[str, str] = {}
+        for group_names in groups.values():
+            if len(group_names) == 1:
+                # No ambiguity — identity mapping
+                name_map[group_names[0]] = group_names[0]
+            else:
+                # Pick the longest name (most complete) as canonical
+                canonical = max(group_names, key=lambda n: len(n))
+                for variant in group_names:
+                    name_map[variant] = canonical
+
+        return name_map
+
     def analyze(self, scored_records: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         Build per-analyst summaries from scored records.
@@ -268,7 +337,15 @@ class WorkloadAnalyzer:
         Returns:
             Full analysis dict including per-analyst breakdown and team stats.
         """
-        # Group feeds by analyst
+        # Build name normalization map across all assignee values in this dataset
+        all_names = [
+            str(r.get("assignee", "")).strip()
+            for r in scored_records
+            if str(r.get("assignee", "")).strip()
+        ]
+        name_map = self._build_name_map(list(set(all_names)))
+
+        # Group feeds by analyst (using canonical name)
         by_analyst: Dict[str, List[Dict[str, Any]]] = {}
         unassigned = []
 
@@ -277,7 +354,8 @@ class WorkloadAnalyzer:
             if not assignee:
                 unassigned.append(r)
                 continue
-            by_analyst.setdefault(assignee, []).append(r)
+            canonical = name_map.get(assignee, assignee)
+            by_analyst.setdefault(canonical, []).append(r)
 
         # Build per-analyst summaries
         analyst_summaries: Dict[str, Dict[str, Any]] = {}
@@ -332,13 +410,25 @@ class WorkloadAnalyzer:
     def _summarize_analyst(
         self, analyst: str, feeds: List[Dict[str, Any]]
     ) -> Dict[str, Any]:
-        total_pts = sum(_to_float(r.get("workload_points", 0)) for r in feeds)
+        primary_pts = sum(
+            _to_float(r.get("workload_points", 0))
+            for r in feeds
+            if r.get("_role") != "backup"
+        )
+        backup_pts = sum(
+            _to_float(r.get("workload_points", 0))
+            for r in feeds
+            if r.get("_role") == "backup"
+        )
+        total_pts = primary_pts + backup_pts
         sorted_feeds = sorted(feeds, key=lambda r: _to_float(r.get("workload_points", 0)), reverse=True)
 
         return {
             "analyst": analyst,
             "feed_count": len(feeds),
             "total_points": round(total_pts, 4),
+            "primary_points": round(primary_pts, 4),
+            "backup_points":  round(backup_pts, 4),
             "feeds": [
                 {
                     "feed_name": r.get("feed_name", r.get("feed_id", "UNKNOWN")),
@@ -347,6 +437,7 @@ class WorkloadAnalyzer:
                     "frequency": r.get("frequency", ""),
                     "volume": r.get("volume", ""),
                     "workload_points": r.get("workload_points", 0),
+                    "role": r.get("_role", "primary"),
                     "score_source": r.get("_score_source", ""),
                     "validation_warning": r.get("_validation_warning"),
                 }
@@ -582,6 +673,62 @@ class WorkloadAuditEngine:
         self.scorer = WorkloadScorer(self.config)
         self.analyzer = WorkloadAnalyzer(self.config)
 
+    # ------------------------------------------------------------------
+    # Role expansion
+    # ------------------------------------------------------------------
+
+    def _expand_role_records(
+        self, scored: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """
+        Expand multi-role columns (ll_assignee, dqs_assignee, backup_assignee)
+        from each scored record into additional records for those people.
+
+        The LeadList-Master sheet has separate columns for:
+          - Lead List Responsibility  →  ll_assignee   (complex, high weight)
+          - DQS Responsible           →  dqs_assignee  (medium weight)
+          - Back-up DA Responsible    →  backup_assignee (low weight)
+
+        Each role generates its own scored record so the person gets credit
+        in the workload analysis. Role weights are multiplied on top of the
+        base_feed_points to reflect the appropriate complexity premium.
+
+        Config keys used:
+          ll_role_weight      (default 3.0) — Lead-list owners carry complex work
+          dqs_role_weight     (default 1.0) — DQS validation responsibility
+          backup_role_weight  (default 0.5) — backup / coverage labour
+        """
+        ll_weight     = float(self.config.get("ll_role_weight",     3.0))
+        dqs_weight    = float(self.config.get("dqs_role_weight",    1.0))
+        backup_weight = float(self.config.get("backup_role_weight", 0.5))
+        base          = float(self.config.get("base_feed_points",   1.0))
+
+        sheet_multipliers: Dict[str, float] = self.config.get("sheet_type_multipliers", {})
+
+        role_map = [
+            ("ll_assignee",     "ll",     ll_weight),
+            ("dqs_assignee",    "dqs",    dqs_weight),
+            ("backup_assignee", "backup", backup_weight),
+        ]
+
+        extra: List[Dict[str, Any]] = []
+        for record in scored:
+            sheet = record.get("_sheet", "")
+            sheet_mult = float(sheet_multipliers.get(sheet, 1.0))
+
+            for field, role_tag, weight in role_map:
+                name = str(record.get(field, "")).strip()
+                if name and name.lower() not in ("", "nan", "none", "n/a", "na", "0"):
+                    pts = round(base * sheet_mult * weight, 4)
+                    new_rec = dict(record)
+                    new_rec["assignee"] = name
+                    new_rec["workload_points"] = pts
+                    new_rec["_score_source"] = f"role_{role_tag}"
+                    new_rec["_role"] = role_tag
+                    extra.append(new_rec)
+
+        return scored + extra
+
     def scan_workbook(
         self,
         filepath: str,
@@ -607,7 +754,12 @@ class WorkloadAuditEngine:
         print(f"[WorkloadAuditEngine] Scanning: {fpath.name}")
 
         parser = WorkbookParser(filepath, sheet_name=sheet_name)
-        parser.parse()
+
+        # Multi-sheet vs single-sheet
+        if sheet_name:
+            parser.parse()
+        else:
+            parser.parse_all_sheets(skip_non_data=True)
 
         if parser.parse_errors and not parser.records:
             return {
@@ -615,6 +767,19 @@ class WorkloadAuditEngine:
                 "filepath": str(fpath),
                 "errors": parser.parse_errors,
             }
+
+        # Load weights from the workbook's own parameters tab (if present)
+        params_from_wb = parser.read_params_sheet()
+        if params_from_wb:
+            print(f"[WorkloadAuditEngine] Loaded {len(params_from_wb)} parameter(s) from workbook params tab.")
+            # Merge into scorer config — workbook values take precedence over defaults
+            self.scorer.config.update(params_from_wb)
+            self.analyzer.overload_threshold_pct  = float(
+                params_from_wb.get("overload_threshold_pct",  self.analyzer.overload_threshold_pct)
+            )
+            self.analyzer.underload_threshold_pct = float(
+                params_from_wb.get("underload_threshold_pct", self.analyzer.underload_threshold_pct)
+            )
 
         # Score every row
         scored = []
@@ -625,6 +790,12 @@ class WorkloadAuditEngine:
             record["_validation_warning"] = score_result.get("validation_warning")
             record["_calc_detail"] = score_result["calculation_detail"]
             scored.append(record)
+
+        # Expand multi-role columns from LeadList-Master into separate scored records.
+        # Lead List Responsibility, DQS Responsible, and Back-up DA each map to a
+        # distinct person with a distinct workload contribution. Role weights are
+        # multiplied on top of the sheet_type_multiplier already in base_feed_points.
+        scored = self._expand_role_records(scored)
 
         # Analyze distribution
         analysis = self.analyzer.analyze(scored)
@@ -824,6 +995,8 @@ class WorkloadAuditEngine:
                 f"| Metric | Value |",
                 f"|---|---|",
                 f"| Feeds | {summary['feed_count']} |",
+                f"| Primary Points | {summary.get('primary_points', summary['total_points']):.2f} |",
+                f"| Backup Points | {summary.get('backup_points', 0):.2f} |",
                 f"| Total Points | {summary['total_points']:.2f} |",
                 f"| Deviation from Avg | {dev_str} |",
                 f"| Capacity Remaining | {cap:.2f} |",
@@ -831,8 +1004,8 @@ class WorkloadAuditEngine:
                 f"",
                 f"**Top feeds by workload:**",
                 f"",
-                f"| Feed | State | Frequency | Volume | Points |",
-                f"|---|---|---|---|---|",
+                f"| Feed | State | Frequency | Volume | Role | Points |",
+                f"|---|---|---|---|---|---|",
             ]
             for feed in summary.get("feeds", [])[:10]:
                 lines.append(
@@ -840,6 +1013,7 @@ class WorkloadAuditEngine:
                     f"| {feed.get('state', '')} "
                     f"| {feed.get('frequency', '')} "
                     f"| {feed.get('volume', '')} "
+                    f"| {feed.get('role', 'primary')} "
                     f"| {feed.get('workload_points', 0)} |"
                 )
             lines += ["", "---", ""]

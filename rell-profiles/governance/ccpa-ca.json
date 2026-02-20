@@ -1,0 +1,167 @@
+{
+  "profile_id": "ccpa-ca",
+  "version": "0.1.0",
+  "standard": "California Consumer Privacy Act (Cal. Civ. Code §1798.100–1798.199) + CPRA Amendments",
+  "jurisdiction": "California, United States",
+  "effective_date": "2020-01-01",
+  "cpra_effective_date": "2023-01-01",
+  "last_reviewed": "2026-02-19",
+  "notes": "15 CCPA/CPRA obligations as auditable data checks. Includes CPRA (Prop 24) amendments effective 2023-01-01. v0.1.0 - baseline model. Not legal advice. Validate against current CPPA regulations before use in a compliance engagement.",
+  "obligations": [
+    {
+      "id": "ccpa-001",
+      "article": "§1798.100",
+      "title": "Right to Know — Consumer Identity Linkable",
+      "description": "Consumers have the right to request disclosure of personal information collected about them. Records must be linkable to a consumer identity to fulfill access requests.",
+      "check_type": "field_present",
+      "severity": "HIGH",
+      "required_fields": ["consumer_id", "data_category"],
+      "recommended_fields": ["pi_category", "consumer_id_type"]
+    },
+    {
+      "id": "ccpa-002",
+      "article": "§1798.105",
+      "title": "Right to Delete — Deletion Request Mechanism",
+      "description": "Consumers have the right to request deletion of personal information collected from them. A mechanism to record, track, and execute deletion requests must exist.",
+      "check_type": "field_present",
+      "severity": "CRITICAL",
+      "required_fields": ["deletion_requested", "deletion_date"],
+      "recommended_fields": ["deletion_request_id", "deletion_confirmed_by", "deletion_method"]
+    },
+    {
+      "id": "ccpa-003",
+      "article": "§1798.106",
+      "title": "Right to Correct — Correction Request Tracking (CPRA)",
+      "description": "CPRA amendment: Consumers have the right to correct inaccurate personal information. Correction requests must be recorded and actioned.",
+      "check_type": "field_present",
+      "severity": "HIGH",
+      "required_fields": ["correction_requested", "correction_date"],
+      "recommended_fields": ["correction_request_id", "correction_confirmed_by"],
+      "cpra_amendment": true
+    },
+    {
+      "id": "ccpa-004",
+      "article": "§1798.110",
+      "title": "Right to Know — Categories of Personal Information",
+      "description": "Consumers may request the categories of personal information collected, the purposes for collection, and categories of third parties with whom it is shared.",
+      "check_type": "field_present",
+      "severity": "HIGH",
+      "required_fields": ["pi_category", "collection_purpose"],
+      "recommended_fields": ["pi_category_description", "third_party_category"]
+    },
+    {
+      "id": "ccpa-005",
+      "article": "§1798.115",
+      "title": "Right to Know — Sale and Disclosure Tracking",
+      "description": "Consumers have the right to know what categories of personal information are sold or disclosed to third parties for business purposes.",
+      "check_type": "field_present",
+      "severity": "HIGH",
+      "required_fields": ["pi_sold_flag", "pi_disclosed_flag"],
+      "recommended_fields": ["third_party_disclosure", "disclosure_purpose", "sale_date"]
+    },
+    {
+      "id": "ccpa-006",
+      "article": "§1798.120",
+      "title": "Right to Opt-Out of Sale",
+      "description": "Consumers have the right to direct a business not to sell their personal information. Opt-out status and date must be recorded per consumer.",
+      "check_type": "field_present",
+      "severity": "CRITICAL",
+      "required_fields": ["opt_out_sale_flag", "opt_out_date"],
+      "recommended_fields": ["opt_out_method", "opt_out_confirmed_by"]
+    },
+    {
+      "id": "ccpa-007",
+      "article": "§1798.120(c)",
+      "title": "Right to Opt-Out of Sharing (CPRA)",
+      "description": "CPRA amendment: Extends opt-out rights to cover sharing of personal information for cross-context behavioral advertising, not just sale.",
+      "check_type": "field_present",
+      "severity": "HIGH",
+      "required_fields": ["opt_out_share_flag"],
+      "recommended_fields": ["opt_out_share_date", "share_purpose"],
+      "cpra_amendment": true
+    },
+    {
+      "id": "ccpa-008",
+      "article": "§1798.121",
+      "title": "Right to Limit Sensitive PI Use (CPRA)",
+      "description": "CPRA amendment: Consumers have the right to limit the use and disclosure of sensitive personal information (SPI) to necessary purposes. SPI must be flagged and request mechanism must exist.",
+      "check_type": "field_present",
+      "severity": "HIGH",
+      "required_fields": ["sensitive_pi_flag", "sensitive_pi_limit_requested"],
+      "recommended_fields": ["sensitive_pi_category", "spi_limit_date"],
+      "cpra_amendment": true
+    },
+    {
+      "id": "ccpa-009",
+      "article": "§1798.125",
+      "title": "Right to Non-Discrimination",
+      "description": "Businesses may not discriminate against consumers for exercising CCPA rights (no denial of service, different pricing, or different quality). Opt-out consumers must not receive degraded service records.",
+      "check_type": "manual_review_flag",
+      "severity": "HIGH",
+      "notes": "Rell flags consumer records where service tier, price, or access level differs after opt-out or deletion request. Cross-reference opt_out_sale_flag / deletion_requested against service_tier or pricing_tier if present."
+    },
+    {
+      "id": "ccpa-010",
+      "article": "§1798.130",
+      "title": "Notice at Collection",
+      "description": "Businesses must inform consumers at or before the point of collection about the categories of personal information collected and the purposes for which it will be used.",
+      "check_type": "field_present",
+      "severity": "HIGH",
+      "required_fields": ["collection_notice_presented", "collection_notice_date"],
+      "recommended_fields": ["collection_notice_version", "notice_delivery_method"]
+    },
+    {
+      "id": "ccpa-011",
+      "article": "§1798.135",
+      "title": "Opt-Out Mechanism — Do Not Sell or Share Link",
+      "description": "Businesses that sell or share personal information must provide a clear and conspicuous 'Do Not Sell or Share My Personal Information' link or equivalent mechanism.",
+      "check_type": "manual_review_flag",
+      "severity": "HIGH",
+      "notes": "Rell flags consumer-facing datasets from systems with no documented opt-out mechanism reference. Check for opt_out_mechanism_url or opt_out_presented_flag in schema. Absence is a HIGH finding."
+    },
+    {
+      "id": "ccpa-012",
+      "article": "§1798.140(ae)",
+      "title": "Sensitive Personal Information Classification (CPRA)",
+      "description": "CPRA defines a new category of Sensitive Personal Information (SPI) including SSNs, financial account data, health data, biometrics, geolocation, and more. SPI must be identified and classified in the data schema.",
+      "check_type": "field_present",
+      "severity": "HIGH",
+      "required_fields": ["data_classification"],
+      "recommended_fields": ["sensitive_pi_type", "pii_masked", "pii_encryption_flag"],
+      "cpra_amendment": true
+    },
+    {
+      "id": "ccpa-013",
+      "article": "§1798.150",
+      "title": "Security — Breach Exposure Tracking",
+      "description": "Consumers have a private right of action if their non-encrypted, non-redacted personal information is subject to unauthorized access due to a business's failure to implement reasonable security. Breach incidents must be recorded.",
+      "check_type": "field_present",
+      "severity": "CRITICAL",
+      "required_fields": ["breach_incident_id", "breach_detected_at"],
+      "recommended_fields": ["breach_affected_consumers", "breach_data_categories", "breach_remediation_date"]
+    },
+    {
+      "id": "ccpa-014",
+      "article": "§1798.185",
+      "title": "Consumer Request Verification and Response",
+      "description": "Businesses must establish a process to verify consumer identity for requests and respond within 45 days (extendable to 90 days). Request intake, verification status, and response date must be tracked.",
+      "check_type": "field_present",
+      "severity": "MEDIUM",
+      "required_fields": ["request_verified", "request_response_date"],
+      "recommended_fields": ["request_type", "request_received_date", "request_extended_flag"],
+      "threshold_days": 45,
+      "notes": "Rell flags any consumer request record where the gap between request_received_date and request_response_date exceeds 45 days without an extension flag."
+    },
+    {
+      "id": "ccpa-015",
+      "article": "§1798.100(a)(2)",
+      "title": "Retention Period Disclosure (CPRA)",
+      "description": "CPRA amendment: Businesses must disclose the length of time they intend to retain each category of personal information, or the criteria used to determine that period.",
+      "check_type": "field_present",
+      "severity": "MEDIUM",
+      "required_fields": ["retention_period", "data_category"],
+      "recommended_fields": ["retention_policy_id", "retention_expiry_date"],
+      "cpra_amendment": true
+    }
+  ]
+}
