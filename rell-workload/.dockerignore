@@ -1,0 +1,23 @@
+# flyctl launch added from .gitignore
+# Python
+**\.venv
+**\__pycache__
+**\*.pyc
+**\*.pyo
+
+# Secrets — never commit
+**\.env
+
+# Data — keep the folder but not uploaded files
+**\data\intake\*.xlsx
+**\data\intake\*.csv
+**\data\reports
+
+# OS
+**\.DS_Store
+**\Thumbs.db
+
+# Editor
+**\.vscode
+**\*.code-workspace
+fly.toml
