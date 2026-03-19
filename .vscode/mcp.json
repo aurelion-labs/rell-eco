@@ -1,0 +1,10 @@
+{
+  "servers": {
+    "rell-engine": {
+      "type": "stdio",
+      "command": "python",
+      "args": ["${workspaceFolder}/rell-engine/mcp_server.py"],
+      "env": {}
+    }
+  }
+}
