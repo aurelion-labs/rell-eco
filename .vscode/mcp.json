@@ -2,7 +2,7 @@
   "servers": {
     "rell-engine": {
       "type": "stdio",
-      "command": "python",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe",
       "args": ["${workspaceFolder}/rell-engine/mcp_server.py"],
       "env": {}
     }
