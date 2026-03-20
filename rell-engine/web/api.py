@@ -16,9 +16,11 @@ from io import BytesIO
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import FastAPI, HTTPException, Request, UploadFile, File
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+from .gate import DemoGate, handle_login, login_page, _COOKIE
 from pydantic import BaseModel
 
 # ---------------------------------------------------------------------------
@@ -35,6 +37,13 @@ import run_audit  # noqa: E402  (imports engine sub-modules via its own sys.path
 # ---------------------------------------------------------------------------
 
 app = FastAPI(title="Rell Audit Engine", version="0.1.0")
+app.add_middleware(DemoGate)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["GET"],
+    allow_headers=["*"],
+)
 
 _STATIC_DIR = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
@@ -43,12 +52,44 @@ app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 _reports: dict = {}
 
 # ---------------------------------------------------------------------------
+# Health
+# ---------------------------------------------------------------------------
+
+from datetime import datetime, timezone  # noqa: E402
+
+@app.get("/health")
+async def health():
+    return {
+        "status": "ok",
+        "service": "rell-engine",
+        "version": "0.1.0",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+# ---------------------------------------------------------------------------
 # Routes — UI
 # ---------------------------------------------------------------------------
 
 
+@app.get("/login", response_class=HTMLResponse)
+async def show_login():
+    return login_page()
+
+
+@app.post("/login")
+async def do_login(request: Request):
+    return await handle_login(request)
+
+
+@app.get("/logout")
+def logout():
+    resp = RedirectResponse("/login", status_code=302)
+    resp.delete_cookie(_COOKIE)
+    return resp
+
+
 @app.get("/", response_class=HTMLResponse)
-async def serve_index():
+async def serve_index(request: Request):
     """Serve the single-page dashboard."""
     return (_STATIC_DIR / "index.html").read_text(encoding="utf-8")
 
